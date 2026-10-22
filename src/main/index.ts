@@ -176,6 +176,16 @@ if (isPrimary) app.whenReady().then(async () => {
   // load and logs what it returns. Never set in normal use.
   const devEval = process.env.TTD_DEV_EVAL;
   if (devEval) {
+    // Scripted test runs play lots of video: keep them silent.
+    mainWindow.webContents.setAudioMuted(true);
+    // Research scripts can ask for a screenshot of the page: console.log('[ttd-dev] capture <name>').
+    mainWindow.webContents.on('console-message', async (event: any, _level?: number, legacy?: string) => {
+      const m = String(event.message ?? legacy ?? '').match(/^\[ttd-dev\] capture ([\w-]+)$/);
+      if (!m) return;
+      const shot = await mainWindow!.webContents.capturePage();
+      require('fs').writeFileSync(path.join(path.dirname(devEval), `${m[1]}.png`), shot.toPNG());
+      console.log('[dev-capture]', m[1]);
+    });
     mainWindow.webContents.on('did-finish-load', async () => {
       const wc = mainWindow!.webContents;
       if (!wc.getURL().startsWith('https://www.youtube.com/')) return;

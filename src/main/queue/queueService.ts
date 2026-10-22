@@ -42,8 +42,8 @@ export class QueueService {
     return event.sender === this.wc && /^https:\/\/www\.youtube\.com\//.test(event.senderFrame?.url ?? '');
   }
 
-  // "Add to queue" arrives as a bare video id; fill in title/channel/thumbnail from oEmbed.
-  async addById(videoId: string): Promise<void> {
+  // Title, channel and thumbnail for a bare video id, from YouTube's public oEmbed.
+  private async lookup(videoId: string): Promise<NewItem> {
     let meta: unknown = null;
     try {
       const watch = `https://www.youtube.com/watch?v=${videoId}`;
@@ -52,9 +52,20 @@ export class QueueService {
     } catch (err) {
       console.warn(`[queue] oEmbed lookup failed for ${videoId}: ${(err as Error).message}`);
     }
-    const item = sanitiseItem(meta) ?? sanitiseItem({ videoId })!;
-    this.model.add(item, this.playing ?? undefined);
+    return sanitiseItem(meta) ?? sanitiseItem({ videoId })!;
+  }
+
+  // "Add to queue" arrives as a bare video id.
+  async addById(videoId: string): Promise<void> {
+    this.model.add(await this.lookup(videoId), this.playing ?? undefined);
     this.commit(null);
+  }
+
+  // YouTube's autoplay pick sometimes arrives without a title; fill it in before it can
+  // be appended to the queue.
+  private async fillAutoplayTitle(videoId: string): Promise<void> {
+    const item = await this.lookup(videoId);
+    if (this.autoplay?.videoId === videoId) this.autoplay = item;
   }
 
   handle(ev: PageEvent): void {
@@ -73,7 +84,10 @@ export class QueueService {
         this.history.record({ videoId: ev.videoId, title: ev.title, channel: ev.channel, durationSec: ev.durationSec, timeSec: ev.timeSec });
         return; // no queue change
       case 'watchData':
-        if (ev.autoplay) this.autoplay = ev.autoplay;
+        if (ev.autoplay) {
+          this.autoplay = ev.autoplay;
+          if (ev.autoplay.title === ev.autoplay.videoId) this.fillAutoplayTitle(ev.autoplay.videoId);
+        }
         if (ev.playlist && ev.listParam === ev.playlist.playlistId) {
           this.model.replaceWithPlaylist(ev.listParam, ev.playlist.items, ev.videoId, this.lastFrom?.timeSec ?? 0);
         }

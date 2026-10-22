@@ -12,6 +12,8 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
   let lastSeq = 0;
   let lastPlaying: { videoId: string; timeSec: number; title?: string; channel?: string } | null = null;
   let lastReportedNav = '';
+  // What was playing when the current navigation started (see yt-navigate-start below).
+  let navFrom: { videoId: string; timeSec: number; title?: string; channel?: string } | null = null;
   let panel: HTMLElement | null = null;
   let dragUid: string | null = null;
   let playerHooked = false;
@@ -157,7 +159,9 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
     const videoId = urlVideoId();
     if (!videoId || location.href === lastReportedNav) return;
     lastReportedNav = location.href;
-    api.report({ type: 'navigated', videoId, from: lastPlaying && lastPlaying.videoId !== videoId ? lastPlaying : null });
+    const from = navFrom ?? lastPlaying;
+    navFrom = null;
+    api.report({ type: 'navigated', videoId, from: from && from.videoId !== videoId ? from : null });
     const data = (globalThis as any).__ttdLastWatchData ?? {};
     api.report({
       type: 'watchData',
@@ -174,6 +178,17 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
     render();
     if (payload.command && payload.seq > lastSeq) navigate(payload.command.navigate.videoId, payload.command.navigate.timeSec);
     lastSeq = Math.max(lastSeq, payload.seq);
+  });
+
+  // YouTube fires yt-navigate-start after the URL has changed but while the player still
+  // holds the outgoing video: snapshot it then. The 5 s progress sample alone can be stale
+  // or already overwritten by the next video.
+  document.addEventListener('yt-navigate-start', () => {
+    const p = player();
+    const vd = p?.getVideoData?.() ?? {};
+    if (typeof vd.video_id === 'string' && vd.video_id) {
+      navFrom = { videoId: vd.video_id, timeSec: p.getCurrentTime(), title: vd.title, channel: vd.author };
+    }
   });
 
   document.addEventListener('yt-navigate-finish', () => {
