@@ -11,11 +11,12 @@ export const queue: Plugin = {
     defaultEnabled: true,
     settings: [],
   },
+  // Capture runs before the autoplay redirect so it records YouTube's real pick.
   transforms: {
     browse: interceptAddToQueue,
     search: interceptAddToQueue,
-    next: [interceptAddToQueue, pointAutoplayAtQueue, capturePlaylistAndAutoplay],
-    initialData: [interceptAddToQueue, pointAutoplayAtQueue, capturePlaylistAndAutoplay],
+    next: [interceptAddToQueue, capturePlaylistAndAutoplay, pointAutoplayAtQueue],
+    initialData: [interceptAddToQueue, capturePlaylistAndAutoplay, pointAutoplayAtQueue],
   },
   css: QUEUE_CSS,
   pageScript: queuePageScript,

@@ -31,6 +31,8 @@ const navigate = (videoId: string, timeSec = 0): Command => ({ navigate: { video
 // videoId, so the same video can be queued twice.
 export class QueueModel {
   private s: QueueState;
+  // The playing video was removed from the queue: its end should play the new current item.
+  private removedPlaying: string | null = null;
 
   constructor(state?: QueueState, private readonly newUid: () => string = randomUUID) {
     this.s = state ? structuredClone(state) : emptyState();
@@ -68,6 +70,8 @@ export class QueueModel {
         }),
       );
       this.s.current = 0;
+      // The video being watched is now the queue's own, so it is no longer a side trip.
+      if (this.s.detourVideoId === playing.videoId) this.s.detourVideoId = null;
     }
     this.s.items.push(this.withUid(item));
   }
@@ -91,6 +95,7 @@ export class QueueModel {
   remove(uid: string): void {
     const idx = this.indexOf(uid);
     if (idx < 0) return;
+    if (idx === this.s.current) this.removedPlaying = this.s.items[idx].videoId;
     this.s.items.splice(idx, 1);
     if (this.s.current === null) return;
     if (idx < this.s.current) this.s.current--;
@@ -101,11 +106,18 @@ export class QueueModel {
     const idx = this.indexOf(uid);
     if (idx < 0) return null;
     this.s.current = idx;
-    this.s.detourVideoId = null;
+    this.leaveDetour();
     return navigate(this.s.items[idx].videoId);
   }
 
+  // Back in the queue by choice: an abandoned detour's return points no longer apply.
+  private leaveDetour(): void {
+    this.s.detourVideoId = null;
+    this.s.returnStack = this.s.returnStack.filter((p) => p.kind === 'queue');
+  }
+
   navigated(videoId: string, from: Playing | null): void {
+    this.removedPlaying = null;
     const currentId = this.currentVideoId();
     if (videoId === currentId) {
       this.s.detourVideoId = null;
@@ -119,7 +131,7 @@ export class QueueModel {
     const idx = after >= 0 ? after : this.s.items.findIndex((i) => i.videoId === videoId);
     if (idx >= 0) {
       this.s.current = idx;
-      this.s.detourVideoId = null;
+      this.leaveDetour();
       return;
     }
 
@@ -132,12 +144,18 @@ export class QueueModel {
 
   ended(videoId: string, autoplayCandidate: NewItem | null): Command {
     if (videoId === this.s.detourVideoId) return this.back();
+    if (videoId === this.removedPlaying) {
+      this.removedPlaying = null;
+      const id = this.currentVideoId();
+      return id ? navigate(id) : null;
+    }
     if (videoId !== this.currentVideoId() || this.s.current === null) return null;
     if (this.s.current < this.s.items.length - 1) {
       this.s.current++;
       return navigate(this.s.items[this.s.current].videoId);
     }
-    if (!autoplayCandidate) return null;
+    // A candidate equal to the video that just ended would replay it forever.
+    if (!autoplayCandidate || autoplayCandidate.videoId === videoId) return null;
     // The queue ran out: YouTube's pick joins the queue visibly, then plays.
     this.s.items.push(this.withUid(autoplayCandidate));
     this.s.current = this.s.items.length - 1;
@@ -146,6 +164,13 @@ export class QueueModel {
 
   replaceWithPlaylist(listId: string, items: NewItem[], startVideoId: string, resumeTimeSec: number): void {
     if (listId === this.s.sourceListId) return;
+    // Opening the playlist looked like a detour from the queue until its data arrived:
+    // that return point becomes the saved queue's playhead instead of a second entry.
+    const top = this.s.returnStack[this.s.returnStack.length - 1];
+    if (this.s.detourVideoId === startVideoId && top?.kind === 'video') {
+      this.s.returnStack.pop();
+      resumeTimeSec = top.timeSec;
+    }
     if (this.s.items.length > 0) {
       this.pushReturn({
         kind: 'queue',

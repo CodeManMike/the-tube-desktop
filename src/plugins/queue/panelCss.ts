@@ -19,7 +19,7 @@ ytd-miniplayer #playlist, ytd-miniplayer ytd-playlist-panel-renderer { display: 
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ttd-queue-back:hover { background: var(--yt-spec-20-percent-layer, rgba(255,255,255,.2)); }
-.ttd-queue-list { max-height: 420px; overflow-y: auto; padding: 4px 0; }
+.ttd-queue-list { max-height: 420px; overflow-y: auto; padding: 4px 0; position: relative; }
 .ttd-queue-empty { padding: 12px 16px 16px; font-size: 13px; color: var(--yt-spec-text-secondary, #aaa); }
 .ttd-q-item { display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 4px; cursor: pointer; position: relative; }
 .ttd-q-item:hover { background: var(--yt-spec-badge-chip-background, rgba(255,255,255,.08)); }

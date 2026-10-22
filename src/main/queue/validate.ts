@@ -21,9 +21,21 @@ const time = (v: unknown): v is number => typeof v === 'number' && Number.isFini
 const text = (v: unknown, max: number): string | undefined => (typeof v === 'string' ? v.slice(0, max) : undefined);
 const shortId = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 100;
 
+// Thumbnails are shown in the panel on every render, so only YouTube's own image hosts
+// are accepted (anything else could be a persistent tracking pixel).
+export function isYouTubeImage(url: unknown): url is string {
+  if (typeof url !== 'string' || url.length > 500) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && (u.hostname.endsWith('.ytimg.com') || u.hostname.endsWith('.ggpht.com'));
+  } catch {
+    return false;
+  }
+}
+
 export function sanitiseItem(v: unknown): NewItem | null {
   if (!isObject(v) || !isVideoId(v.videoId)) return null;
-  const thumb = typeof v.thumbnail === 'string' && v.thumbnail.startsWith('https://') && v.thumbnail.length <= 500;
+  const thumb = isYouTubeImage(v.thumbnail);
   return {
     videoId: v.videoId,
     title: text(v.title, 200) ?? v.videoId,

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { writeFileAtomic } from '../atomicFile';
 import { MAX_RETURN_POINTS, QueueItem, QueueState, ReturnPoint } from './model';
+import { isYouTubeImage } from './validate';
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 
@@ -16,8 +17,7 @@ function item(v: unknown): QueueItem | null {
     videoId: v.videoId,
     title: typeof v.title === 'string' ? v.title : v.videoId,
     channel: typeof v.channel === 'string' ? v.channel : '',
-    thumbnail:
-      typeof v.thumbnail === 'string' && v.thumbnail.startsWith('https://') ? v.thumbnail : `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg`,
+    thumbnail: isYouTubeImage(v.thumbnail) ? v.thumbnail : `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg`,
     ...(finite(v.durationSec) && { durationSec: v.durationSec }),
   };
 }

@@ -21,7 +21,7 @@ function homeFeed() {
   };
 }
 
-function watchResponse() {
+function watchResponse(selfId = 'w'.repeat(11)) {
   const thumb = (id: string) => ({ thumbnails: [{ url: `https://i.ytimg.com/vi/${id}/hqdefault.jpg?x=1`, width: 168, height: 94 }] });
   return {
     contents: { twoColumnWatchNextResults: {
@@ -37,6 +37,7 @@ function watchResponse() {
       } }] } }] } },
     } },
     playerOverlays: { playerOverlayRenderer: { autoplay: { playerOverlayAutoplayRenderer: { videoId: ID('z') } } } },
+    currentVideoEndpoint: { watchEndpoint: { videoId: selfId } },
   };
 }
 
@@ -127,4 +128,30 @@ test('the queue page script serialises and exits quietly without the bridge', ()
   sandbox.globalThis = sandbox;
   const standalone = vm.runInNewContext(asExpression(queuePageScript), sandbox);
   assert.doesNotThrow(() => standalone({}));
+});
+
+test('pointAutoplayAtQueue never points a video at itself (stale queue state)', () => {
+  g.__ttdQueue = { nextVideoId: ID('w') };
+  assert.deepEqual(pointAutoplayAtQueue(watchResponse(ID('w')), {}), watchResponse(ID('w')));
+  delete g.__ttdQueue;
+});
+
+test('captured watch data is tagged with its own video id', () => {
+  capturePlaylistAndAutoplay(watchResponse(ID('w')), {});
+  assert.equal(g.__ttdLastWatchData.videoId, ID('w'));
+});
+
+test("the queue plugin captures YouTube's real pick before redirecting autoplay", async () => {
+  const { queue } = await import('../plugins/queue');
+  const fns = queue.transforms!.next as Function[];
+  assert.ok(fns.indexOf(capturePlaylistAndAutoplay) < fns.indexOf(pointAutoplayAtQueue));
+});
+
+test('capture registers itself so the page script can run it on in-app navigations', () => {
+  delete g.__ttdCaptureWatch;
+  capturePlaylistAndAutoplay({ contents: {} }, {});
+  assert.equal(typeof g.__ttdCaptureWatch, 'function');
+  g.__ttdCaptureWatch(watchResponse(ID('w')), {});
+  assert.equal(g.__ttdLastWatchData.videoId, ID('w'));
+  delete g.__ttdCaptureWatch;
 });

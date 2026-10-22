@@ -175,3 +175,49 @@ test('state() is a deep copy', () => {
   assert.equal(m.state().items.length, 2);
   assert.equal(m.state().items[0].title, before);
 });
+
+test('an autoplay candidate equal to the video that just ended is ignored (no replay loop)', () => {
+  const m = model();
+  m.add(v(B), { videoId: A, timeSec: 0 });
+  m.jump(m.state().items[1].uid);
+  assert.equal(m.ended(B, v(B)), null);
+  assert.deepEqual(ids(m), [A, B]);
+});
+
+test('removing the playing item: when it ends, the new current item plays', () => {
+  const m = model();
+  m.add(v(B), { videoId: A, timeSec: 0 });
+  m.add(v(C));
+  m.remove(m.state().items[0].uid); // A is still playing on screen
+  assert.deepEqual(m.ended(A, null), { navigate: { videoId: B, timeSec: 0 } });
+  assert.equal(currentId(m), B);
+});
+
+test('adding while watching a detour makes it current and ends the detour', () => {
+  const m = model();
+  m.add(v(B), { videoId: A, timeSec: 0 });
+  m.navigated(E, { videoId: A, timeSec: 10 });
+  m.remove(m.state().items[0].uid);
+  m.remove(m.state().items[0].uid); // queue now empty, still watching detour E
+  m.add(v(C), { videoId: E, timeSec: 5 });
+  assert.deepEqual(ids(m), [E, C]);
+  assert.equal(m.state().detourVideoId, null);
+  assert.deepEqual(m.ended(E, null), { navigate: { videoId: C, timeSec: 0 } });
+});
+
+test('jumping into the queue drops the abandoned detour\'s return points', () => {
+  const m = model();
+  m.add(v(B), { videoId: A, timeSec: 0 });
+  m.navigated(E, { videoId: A, timeSec: 100 });
+  m.jump(m.state().items[1].uid);
+  assert.deepEqual(m.state().returnStack, []);
+});
+
+test('starting a playlist from the queue saves the old queue once, at the playhead', () => {
+  const m = model();
+  m.add(v(B), { videoId: A, timeSec: 0 });
+  m.navigated(C, { videoId: A, timeSec: 42 }); // looks like a detour until the playlist data arrives
+  m.replaceWithPlaylist('PLx', [v(C), v(D)], C, 7);
+  assert.equal(m.state().returnStack.length, 1);
+  assert.deepEqual(m.back(), { navigate: { videoId: A, timeSec: 42 } });
+});

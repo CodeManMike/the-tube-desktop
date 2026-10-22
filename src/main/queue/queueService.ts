@@ -39,7 +39,22 @@ export class QueueService {
   }
 
   private fromYouTube(event: IpcMainEvent): boolean {
-    return event.sender === this.wc && /^https:\/\/www\.youtube\.com\//.test(event.senderFrame?.url ?? '');
+    const ok = event.sender === this.wc && /^https:\/\/www\.youtube\.com\//.test(event.senderFrame?.url ?? '');
+    if (!ok) console.warn(`[queue] ignored a message from an unexpected sender: ${event.senderFrame?.url ?? 'unknown'}`);
+    return ok;
+  }
+
+  // What the main window is showing right now. The 5 s progress sample can be stale (a
+  // different video, or one you already left), so the URL decides.
+  private watching(): Playing | undefined {
+    try {
+      const u = new URL(this.wc?.getURL() ?? '');
+      const id = u.searchParams.get('v');
+      if (u.hostname !== 'www.youtube.com' || u.pathname !== '/watch' || !id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return undefined;
+      return this.playing?.videoId === id ? this.playing : { videoId: id, timeSec: 0 };
+    } catch {
+      return undefined;
+    }
   }
 
   // Title, channel and thumbnail for a bare video id, from YouTube's public oEmbed.
@@ -57,7 +72,7 @@ export class QueueService {
 
   // "Add to queue" arrives as a bare video id.
   async addById(videoId: string): Promise<void> {
-    this.model.add(await this.lookup(videoId), this.playing ?? undefined);
+    this.model.add(await this.lookup(videoId), this.watching());
     this.commit(null);
   }
 

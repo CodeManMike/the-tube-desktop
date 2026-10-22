@@ -16,6 +16,7 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
   let navFrom: { videoId: string; timeSec: number; title?: string; channel?: string } | null = null;
   let panel: HTMLElement | null = null;
   let dragUid: string | null = null;
+  let lastCurrentUid: string | null = null;
   let playerHooked = false;
 
   const player = () => document.querySelector('#movie_player') as any;
@@ -75,6 +76,7 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
     if (host.firstElementChild !== panel) host.prepend(panel);
 
     const s = state;
+    const previousScroll = panel.querySelector('.ttd-queue-list')?.scrollTop ?? 0;
     const head = el('div', 'ttd-queue-head');
     const title = el('div', 'ttd-queue-title', 'Queue');
     title.append(el('span', 'ttd-queue-count', s.items.length ? `${s.items.length} video${s.items.length === 1 ? '' : 's'}` : ''));
@@ -122,7 +124,9 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
         action('✕', 'Remove', () => api.report({ type: 'action', action: 'remove', uid: item.uid }));
         row.append(actions);
 
-        row.addEventListener('click', () => api.report({ type: 'action', action: 'jump', uid: item.uid }));
+        row.addEventListener('click', () => {
+          if (index !== s.current) api.report({ type: 'action', action: 'jump', uid: item.uid });
+        });
         row.addEventListener('dragstart', (e) => {
           dragUid = item.uid;
           e.dataTransfer?.setData('text/plain', item.uid);
@@ -135,7 +139,10 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
         row.addEventListener('drop', (e) => {
           e.preventDefault();
           row.classList.remove('drop-before');
-          if (dragUid && dragUid !== item.uid) api.report({ type: 'move', uid: dragUid, toIndex: index });
+          // Dropping on a row places the dragged item before it; the model removes the item
+          // first, so moving down lands one index earlier.
+          const from = s.items.findIndex((i) => i.uid === dragUid);
+          if (dragUid && from >= 0 && dragUid !== item.uid) api.report({ type: 'move', uid: dragUid, toIndex: from < index ? index - 1 : index });
           dragUid = null;
         });
         list.append(row);
@@ -143,6 +150,18 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
       children.push(list);
     }
     panel.replaceChildren(...children);
+
+    // Keep the list where the user left it; bring the current item into view when it changes.
+    const list = panel.querySelector('.ttd-queue-list') as HTMLElement | null;
+    if (list) {
+      list.scrollTop = previousScroll;
+      const currentUid = s.current === null ? null : s.items[s.current].uid;
+      if (currentUid !== lastCurrentUid && s.current !== null) {
+        const row = list.children[s.current] as HTMLElement | undefined;
+        if (row) list.scrollTop = Math.max(0, row.offsetTop - list.clientHeight / 2 + row.clientHeight / 2);
+      }
+      lastCurrentUid = currentUid;
+    }
   };
 
   const hookPlayer = () => {
@@ -150,7 +169,8 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
     if (playerHooked || !p?.addEventListener) return;
     playerHooked = true;
     p.addEventListener('onStateChange', (st: number) => {
-      const videoId = urlVideoId();
+      // From the player, not the URL: the miniplayer keeps playing while you browse.
+      const videoId = p.getVideoData?.()?.video_id ?? urlVideoId();
       if (st === 0 && videoId) api.report({ type: 'ended', videoId });
     });
   };
@@ -162,14 +182,24 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
     const from = navFrom ?? lastPlaying;
     navFrom = null;
     api.report({ type: 'navigated', videoId, from: from && from.videoId !== videoId ? from : null });
-    const data = (globalThis as any).__ttdLastWatchData ?? {};
-    api.report({
-      type: 'watchData',
-      videoId,
-      playlist: data.playlist ?? null,
-      autoplay: data.autoplay ?? null,
-      listParam: new URL(location.href).searchParams.get('list'),
-    });
+    // In-app navigations don't pass through the fetch hook: read the watch page's own data
+    // (ytd-watch-flexy), which YouTube swaps in shortly after yt-navigate-finish. Wait until
+    // it belongs to this video, so another video's playlist or autoplay pick is never used.
+    const listParam = new URL(location.href).searchParams.get('list');
+    let tries = 0;
+    const sendWatchData = () => {
+      const flexy = document.querySelector('ytd-watch-flexy') as any;
+      const pageData = flexy?.__data?.data ?? flexy?.data;
+      if (pageData && typeof (globalThis as any).__ttdCaptureWatch === 'function') (globalThis as any).__ttdCaptureWatch(pageData, {});
+      const captured = (globalThis as any).__ttdLastWatchData;
+      if ((!captured || captured.videoId !== videoId) && ++tries < 16) {
+        setTimeout(sendWatchData, 250);
+        return;
+      }
+      const data = captured && captured.videoId === videoId ? captured : {};
+      api.report({ type: 'watchData', videoId, playlist: data.playlist ?? null, autoplay: data.autoplay ?? null, listParam });
+    };
+    sendWatchData();
   };
 
   api.onState((payload: any) => {

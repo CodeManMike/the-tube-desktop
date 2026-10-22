@@ -30,6 +30,8 @@ export function interceptAddToQueue(data: any, _settings: Record<string, unknown
 export function pointAutoplayAtQueue(data: any, _settings: Record<string, unknown>): any {
   const next = (globalThis as any).__ttdQueue?.nextVideoId;
   if (typeof next !== 'string') return data;
+  // The queue state may still describe the previous video; never point a video at itself.
+  if (next === data?.currentVideoEndpoint?.watchEndpoint?.videoId) return data;
   const set = data?.contents?.twoColumnWatchNextResults?.autoplay?.autoplay?.sets?.[0];
   if (set?.autoplayVideo?.watchEndpoint) set.autoplayVideo.watchEndpoint.videoId = next;
   if (set?.nextButtonVideo?.watchEndpoint) set.nextButtonVideo.watchEndpoint.videoId = next;
@@ -41,6 +43,9 @@ export function pointAutoplayAtQueue(data: any, _settings: Record<string, unknow
 // Remember the watch page's playlist window and YouTube's autoplay pick for the page
 // script to report. Leaves the data itself untouched.
 export function capturePlaylistAndAutoplay(data: any, _settings: Record<string, unknown>): any {
+  // In-app navigations fetch watch data out of reach of the page's fetch hook, so the page
+  // script re-runs this on the watch page's own data (ytd-watch-flexy) after each one.
+  (globalThis as any).__ttdCaptureWatch = capturePlaylistAndAutoplay;
   const watch = data?.contents?.twoColumnWatchNextResults;
   if (!watch) return data;
 
@@ -95,6 +100,7 @@ export function capturePlaylistAndAutoplay(data: any, _settings: Record<string, 
     };
   }
 
-  (globalThis as any).__ttdLastWatchData = { playlist, autoplay };
+  const videoId = data?.currentVideoEndpoint?.watchEndpoint?.videoId ?? null;
+  (globalThis as any).__ttdLastWatchData = { videoId, playlist, autoplay };
   return data;
 }

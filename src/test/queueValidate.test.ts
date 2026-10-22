@@ -45,3 +45,12 @@ test('rejects bad actions, negative indexes and non-finite times', () => {
   assert.equal(validateEvent({ type: 'move', uid: 'u1', toIndex: -1 }), null);
   assert.equal(validateEvent({ type: 'progress', videoId: A, timeSec: Infinity, durationSec: 1 }), null);
 });
+
+test('thumbnails are only accepted from YouTube image hosts', () => {
+  const ev = (thumbnail: string) => validateEvent({ type: 'watchData', videoId: A, listParam: null, playlist: null, autoplay: item({ thumbnail }) });
+  const thumb = (t: string) => { const e = ev(t); return e && e.type === 'watchData' ? e.autoplay!.thumbnail : null; };
+  assert.equal(thumb('https://i.ytimg.com/vi/x/hqdefault.jpg'), 'https://i.ytimg.com/vi/x/hqdefault.jpg');
+  assert.equal(thumb('https://yt3.ggpht.com/abc'), 'https://yt3.ggpht.com/abc');
+  assert.equal(thumb('https://tracker.example.com/pixel.gif'), `https://i.ytimg.com/vi/${A}/mqdefault.jpg`);
+  assert.equal(thumb('https://i.ytimg.com.evil.com/x.jpg'), `https://i.ytimg.com/vi/${A}/mqdefault.jpg`);
+});
