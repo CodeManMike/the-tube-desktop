@@ -1,23 +1,25 @@
 {
-  "name": "the-tube",
+  "name": "the-tube-desktop",
   "version": "0.0.1",
   "private": true,
-  "description": "Phase 0 spike: a dedicated desktop YouTube app",
+  "description": "The Tube Desktop (TTD): a dedicated desktop app for YouTube",
   "license": "PolyForm-Noncommercial-1.0.0",
   "author": "Michael Brian Du Preez (https://github.com/CodeManMike)",
   "repository": {
     "type": "git",
     "url": "https://github.com/CodeManMike/the-tube-desktop.git"
   },
-  "main": "dist/main.js",
+  "main": "dist/main/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "tsc && electron dist/main.js",
+    "start": "tsc && electron .",
+    "test": "tsc && node --test \"dist/test/*.test.js\"",
     "sign": "python -m castlabs_evs.vmp sign-pkg node_modules/electron/dist",
-    "test": "tsc && node --test \"dist/test/*.test.js\""
+    "postinstall": "node node_modules/electron/install.js"
   },
   "devDependencies": {
     "electron": "https://github.com/castlabs/electron-releases#v44.5.1+wvcus",
     "typescript": "^5.9.3"
-  }
+  },
+  "productName": "The Tube Desktop"
 }
