@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { SettingDef, validateSetting } from '../shared/settings';
+import { writeFileAtomic } from './atomicFile';
 
 export type WindowState = { x: number; y: number; width: number; height: number; maximized: boolean };
 
@@ -48,24 +49,8 @@ export class SettingsStore {
     }
   }
 
-  // Write to a temp file then rename, so a crash mid-write never leaves a torn file.
-  // On Windows the rename can briefly fail while antivirus or indexing holds the file;
-  // retry a few times, then log and keep the in-memory value rather than crash.
   private save(): void {
-    const tmp = `${this.file}.tmp`;
-    for (let attempt = 1; ; attempt++) {
-      try {
-        fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
-        fs.renameSync(tmp, this.file);
-        return;
-      } catch (err) {
-        if (attempt >= 5) {
-          console.warn(`[settings] save failed: ${(err as Error).message}`);
-          return;
-        }
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 * attempt);
-      }
-    }
+    writeFileAtomic(this.file, JSON.stringify(this.data, null, 2));
   }
 
   private plugin(id: string): PluginState {

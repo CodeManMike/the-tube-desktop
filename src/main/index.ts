@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, components, screen, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, components, net, screen, session, shell } from 'electron';
 import path from 'path';
 import { PARTITION } from './config';
 import { migrateLegacyProfile } from './migrate';
@@ -9,6 +9,10 @@ import { SettingsStore } from './settingsStore';
 import { closeSettingsWindow, openSettingsWindow, registerSettingsIpc } from './settingsWindow';
 import { restoreBounds } from './windowState';
 import { ALL_PLUGINS } from '../plugins';
+import { HistoryStore } from './history/historyStore';
+import { QueueModel } from './queue/model';
+import { QueueService } from './queue/queueService';
+import { QueueStore } from './queue/queueStore';
 
 const ICON = path.join(app.getAppPath(), 'assets', 'icons', 'favicon.ico');
 const HOME = 'https://www.youtube.com';
@@ -27,6 +31,7 @@ app.setAppUserModelId('com.thetubedesktop.app');
 
 let mainWindow: BrowserWindow | null = null;
 let bundle: PageBundleHandle | null = null;
+let queueService: QueueService | null = null;
 
 // Two instances on one profile can't share the cookie database, so a second one
 // would start signed out. Hand over to the running window instead.
@@ -68,7 +73,12 @@ export function createMainWindow(store: SettingsStore): BrowserWindow {
     autoHideMenuBar: true,
     icon: ICON,
     title: 'The Tube Desktop',
-    webPreferences: { partition: PARTITION, contextIsolation: true, sandbox: true },
+    webPreferences: {
+      partition: PARTITION,
+      contextIsolation: true,
+      sandbox: true,
+      preload: path.join(__dirname, '..', 'preload', 'main.js'),
+    },
   });
   win.setMenuBarVisibility(false);
   if (saved?.maximized) win.maximize();
@@ -81,6 +91,7 @@ export function createMainWindow(store: SettingsStore): BrowserWindow {
     const route = routeUrl(url);
     if (route.action === 'app') win.loadURL(url).catch(() => {});
     else if (route.action === 'external') openInBrowser(route.url);
+    else if (route.action === 'queueAdd') queueService?.addById(route.videoId);
     return { action: 'deny' };
   });
   const guard = (event: Electron.Event, url: string) => {
@@ -88,6 +99,7 @@ export function createMainWindow(store: SettingsStore): BrowserWindow {
     if (route.action === 'app') return;
     event.preventDefault();
     if (route.action === 'external') openInBrowser(route.url);
+    else if (route.action === 'queueAdd') queueService?.addById(route.videoId);
   };
   win.webContents.on('will-navigate', (event, url) => {
     if (url !== 'about:blank') guard(event, url);
@@ -133,6 +145,19 @@ if (isPrimary) app.whenReady().then(async () => {
   configureSession();
   mainWindow = createMainWindow(store);
 
+  // The queue is owned here, persisted on every change, and survives restarts.
+  const userData = app.getPath('userData');
+  const queueStore = new QueueStore(path.join(userData, 'queue.json'));
+  const history = new HistoryStore(path.join(userData, 'history.json'));
+  queueService = new QueueService(new QueueModel(queueStore.load()), queueStore, history, async (url) => {
+    const res = await net.fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  });
+  queueService.attach(mainWindow.webContents);
+  setInterval(() => history.flush(), 30_000);
+  app.on('before-quit', () => queueService?.flush());
+
   // Diagnostic: is the saved session present, and does YouTube accept it?
   mainWindow.webContents.on('did-finish-load', async () => {
     const wc = mainWindow!.webContents;
@@ -147,6 +172,30 @@ if (isPrimary) app.whenReady().then(async () => {
   });
 
   // A plugin the page turned off after repeated failures stays off for this session.
+  // Dev-only research hook: TTD_DEV_EVAL=<file> runs that script in the page after each
+  // load and logs what it returns. Never set in normal use.
+  const devEval = process.env.TTD_DEV_EVAL;
+  if (devEval) {
+    // Scripted test runs play lots of video: keep them silent.
+    mainWindow.webContents.setAudioMuted(true);
+    // Research scripts can ask for a screenshot of the page: console.log('[ttd-dev] capture <name>').
+    mainWindow.webContents.on('console-message', async (event: any, _level?: number, legacy?: string) => {
+      const m = String(event.message ?? legacy ?? '').match(/^\[ttd-dev\] capture ([\w-]+)$/);
+      if (!m) return;
+      const shot = await mainWindow!.webContents.capturePage();
+      require('fs').writeFileSync(path.join(path.dirname(devEval), `${m[1]}.png`), shot.toPNG());
+      console.log('[dev-capture]', m[1]);
+    });
+    mainWindow.webContents.on('did-finish-load', async () => {
+      const wc = mainWindow!.webContents;
+      if (!wc.getURL().startsWith('https://www.youtube.com/')) return;
+      const result = await wc
+        .executeJavaScript(require('fs').readFileSync(devEval, 'utf8'))
+        .catch((err: Error) => `error: ${err.message}`);
+      console.log('[dev-eval]', JSON.stringify(result));
+    });
+  }
+
   bundle = await attachPageBundle(
     mainWindow.webContents,
     () => registry.pageEntries(),

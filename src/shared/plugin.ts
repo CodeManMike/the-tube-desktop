@@ -20,7 +20,8 @@ export type MainContext = { mainWindow: BrowserWindow; store: SettingsStore; log
 
 export type Plugin = {
   manifest: PluginManifest;
-  transforms?: Partial<Record<Endpoint, Transform>>;
+  // One transform, or several applied in order (each with its own fail-safe count).
+  transforms?: Partial<Record<Endpoint, Transform | Transform[]>>;
   css?: string;
   pageScript?: (settings: Record<string, unknown>) => void;
   main?: (ctx: MainContext) => void;

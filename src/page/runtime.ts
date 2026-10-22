@@ -4,7 +4,7 @@
 export type RuntimeEntry = {
   id: string;
   settings: Record<string, unknown>;
-  transforms: Partial<Record<string, (data: any, settings: Record<string, unknown>) => any>>;
+  transforms: Partial<Record<string, ((data: any, settings: Record<string, unknown>) => any) | ((data: any, settings: Record<string, unknown>) => any)[]>>;
   css: string | null;
   script: ((settings: Record<string, unknown>) => void) | null;
 };
@@ -15,12 +15,12 @@ export function pageRuntime(entries: RuntimeEntry[]): void {
 
   const MAX_FAILURES = 3;
   type Fn = (data: any, settings: Record<string, unknown>) => any;
-  type Live = { id: string; settings: Record<string, unknown>; fns: Record<string, Fn>; failures: number; off: boolean };
+  type Live = { id: string; settings: Record<string, unknown>; fns: Record<string, Fn | Fn[]>; failures: number; off: boolean };
 
   const live: Live[] = entries.map((e) => ({
     id: e.id,
     settings: e.settings,
-    fns: e.transforms as Record<string, Fn>,
+    fns: e.transforms as Record<string, Fn | Fn[]>,
     failures: 0,
     off: false,
   }));
@@ -47,18 +47,21 @@ export function pageRuntime(entries: RuntimeEntry[]): void {
   // still leave partial edits; plugins should avoid that.)
   const apply = (endpoint: string, data: any) => {
     for (const p of live) {
-      const fn = p.fns[endpoint];
-      if (!fn || p.off) continue;
-      try {
-        const out = fn(data, p.settings);
-        if (out !== undefined) data = out;
-      } catch (err) {
-        p.failures++;
-        console.warn(`[ttd] ${p.id} failed on ${endpoint}: ${(err as Error).message}`);
-        if (p.failures >= MAX_FAILURES) {
-          p.off = true;
-          console.warn(`[ttd] ${p.id} disabled after repeated failures`);
-          toast(`TTD: ${p.id} was turned off for this page`);
+      const entry = p.fns[endpoint];
+      if (!entry) continue;
+      for (const fn of Array.isArray(entry) ? entry : [entry]) {
+        if (p.off) break;
+        try {
+          const out = fn(data, p.settings);
+          if (out !== undefined) data = out;
+        } catch (err) {
+          p.failures++;
+          console.warn(`[ttd] ${p.id} failed on ${endpoint}: ${(err as Error).message}`);
+          if (p.failures >= MAX_FAILURES) {
+            p.off = true;
+            console.warn(`[ttd] ${p.id} disabled after repeated failures`);
+            toast(`TTD: ${p.id} was turned off for this page`);
+          }
         }
       }
     }
