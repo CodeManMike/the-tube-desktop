@@ -37,6 +37,7 @@ export async function attachCdpRewrite(wc: WebContents, rules: Rule[]): Promise<
   dbg.on('message', async (_event, method, params) => {
     if (method !== 'Fetch.requestPaused') return;
     const { requestId, request, responseStatusCode, responseHeaders } = params;
+    const t0 = performance.now();
     try {
       const raw = await dbg.sendCommand('Fetch.getResponseBody', { requestId });
       const text = raw.base64Encoded ? Buffer.from(raw.body, 'base64').toString('utf8') : raw.body;
@@ -58,7 +59,7 @@ export async function attachCdpRewrite(wc: WebContents, rules: Rule[]): Promise<
         ),
         body: Buffer.from(body, 'utf8').toString('base64'),
       });
-      console.log(`[cdp] ${path} ${ms.toFixed(1)}ms`);
+      console.log(`[cdp] ${path} ${ms.toFixed(1)}ms (end-to-end ${(performance.now() - t0).toFixed(1)}ms)`);
     } catch (err) {
       console.warn(`[cdp] passthrough ${request.url}: ${(err as Error).message}`);
       await dbg.sendCommand('Fetch.continueRequest', { requestId }).catch(() => {});

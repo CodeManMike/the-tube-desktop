@@ -1,11 +1,12 @@
 import { app, BrowserWindow, Menu, components, session } from 'electron';
 import { attachCdpRewrite } from './rewrite/cdp';
+import { attachPageRewrite } from './rewrite/page';
 import { Rule } from './rewrite/types';
 import { hideShorts } from './rules/hideShorts';
 
 // Spike switches: TUBE_REWRITE=cdp|page|off picks the rewrite candidate;
 // TUBE_BREAK=1 adds a rule that always throws, to prove the fail-safe.
-const REWRITE = process.env.TUBE_REWRITE ?? 'cdp';
+const REWRITE = process.env.TUBE_REWRITE ?? 'page';
 const RULES: Rule[] = [hideShorts];
 if (process.env.TUBE_BREAK === '1') {
   RULES.push({ name: 'alwaysThrows', transform: () => { throw new Error('deliberate'); } });
@@ -103,6 +104,9 @@ async function probe(win: BrowserWindow): Promise<void> {
   await wc.executeJavaScript(`document.querySelector('ytd-topbar-logo-renderer a').click()`);
   await wait(5000);
   await count('back home (SPA)');
+  wc.openDevTools({ mode: 'detach' });
+  await wait(3000);
+  console.log('[probe] devtools opened:', wc.isDevToolsOpened(), 'debugger attached:', wc.debugger.isAttached());
   console.log('[probe] done');
 }
 
@@ -124,8 +128,13 @@ app.whenReady().then(async () => {
     console.log('[session]', wc.getURL(), 'SID cookies:', sid.length, 'LOGGED_IN:', loggedIn);
   });
 
-  if (process.env.TUBE_PROBE === '1') mainWindow.webContents.once('did-finish-load', () => probe(mainWindow!));
   if (REWRITE === 'cdp') await attachCdpRewrite(mainWindow.webContents, RULES);
+  if (REWRITE === 'page') {
+    // The Page domain needs a live renderer; a fresh window has none until something loads.
+    await mainWindow.loadURL('about:blank');
+    await attachPageRewrite(mainWindow.webContents, RULES);
+  }
+  if (process.env.TUBE_PROBE === '1') mainWindow.webContents.once('did-finish-load', () => probe(mainWindow!));
   console.log('[rewrite] candidate:', REWRITE);
 
   // YouTube redirects the first load (?themeRefresh=1), which aborts the original navigation.
