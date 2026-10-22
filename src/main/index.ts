@@ -24,10 +24,24 @@ app.userAgentFallback = ELECTRON_UA
 const SIGNIN_URLS = ['https://accounts.google.com/*', 'https://accounts.youtube.com/*'];
 
 app.setAppUserModelId('com.thetubedesktop.app');
-console.log('[migrate]', migrateLegacyProfile(path.join(app.getPath('appData'), 'Electron'), app.getPath('userData')));
 
 let mainWindow: BrowserWindow | null = null;
 let bundle: PageBundleHandle | null = null;
+
+// Two instances on one profile can't share the cookie database, so a second one
+// would start signed out. Hand over to the running window instead.
+const isPrimary = app.requestSingleInstanceLock();
+if (!isPrimary) {
+  console.log('[ttd] already running; focusing the existing window');
+  app.quit();
+} else {
+  console.log('[migrate]', migrateLegacyProfile(path.join(app.getPath('appData'), 'Electron'), app.getPath('userData')));
+  app.on('second-instance', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  });
+}
 
 function configureSession(): void {
   const ses = session.fromPartition(PARTITION);
@@ -90,7 +104,7 @@ function buildMenu(): void {
   Menu.setApplicationMenu(menu);
 }
 
-app.whenReady().then(async () => {
+if (isPrimary) app.whenReady().then(async () => {
   await components.whenReady();
   console.log('[widevine]', components.status());
 
