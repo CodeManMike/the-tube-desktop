@@ -74,3 +74,10 @@ test('a list of transforms is serialised as an evaluable array', () => {
   assert.equal(fns.length, 2);
   assert.deepEqual(fns[1](fns[0]({}, {}), {}), { a: 1, b: 2 });
 });
+
+
+test('page functions are serialised by name', () => {
+  const p = plugin('f', { pageFunctions: { double: (x: number) => x * 2 } });
+  const [entry] = new PluginRegistry([p], store()).pageEntries();
+  assert.equal(new Function('return ' + entry.functions!.double)()(4), 8);
+});

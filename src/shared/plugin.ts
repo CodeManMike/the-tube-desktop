@@ -24,6 +24,8 @@ export type Plugin = {
   transforms?: Partial<Record<Endpoint, Transform | Transform[]>>;
   css?: string;
   pageScript?: (settings: Record<string, unknown>) => void;
+  // Self-contained helpers the page script can call as globalThis.__ttdFns[name].
+  pageFunctions?: Record<string, Function>;
   main?: (ctx: MainContext) => void;
 };
 
@@ -34,4 +36,5 @@ export type PageEntry = {
   transforms: Partial<Record<Endpoint, string>>;
   css?: string;
   script?: string;
+  functions?: Record<string, string>;
 };

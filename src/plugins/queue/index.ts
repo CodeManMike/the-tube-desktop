@@ -1,6 +1,7 @@
 import { Plugin } from '../../shared/plugin';
 import { QUEUE_CSS } from './panelCss';
 import { queuePageScript } from './pageScript';
+import { parseVideoPage } from './parse';
 import { capturePlaylistAndAutoplay, interceptAddToQueue, pointAutoplayAtQueue } from './transforms';
 
 export const queue: Plugin = {
@@ -23,4 +24,5 @@ export const queue: Plugin = {
   },
   css: QUEUE_CSS,
   pageScript: queuePageScript,
+  pageFunctions: { parseVideoPage },
 };
