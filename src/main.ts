@@ -1,4 +1,15 @@
 import { app, BrowserWindow, Menu, components, session } from 'electron';
+import { attachCdpRewrite } from './rewrite/cdp';
+import { Rule } from './rewrite/types';
+import { hideShorts } from './rules/hideShorts';
+
+// Spike switches: TUBE_REWRITE=cdp|page|off picks the rewrite candidate;
+// TUBE_BREAK=1 adds a rule that always throws, to prove the fail-safe.
+const REWRITE = process.env.TUBE_REWRITE ?? 'cdp';
+const RULES: Rule[] = [hideShorts];
+if (process.env.TUBE_BREAK === '1') {
+  RULES.push({ name: 'alwaysThrows', transform: () => { throw new Error('deliberate'); } });
+}
 
 export const PARTITION = 'persist:tube';
 
@@ -17,6 +28,17 @@ function useHonestUaForSignIn(): void {
     (details, callback) => {
       callback({ requestHeaders: { ...details.requestHeaders, 'User-Agent': ELECTRON_UA } });
     },
+  );
+}
+
+// YouTube's service worker fetches on the page's behalf, which hides those
+// requests from page-level CDP Fetch interception. YouTube only uses it for
+// push and offline caching, so clear it and stop it re-registering.
+async function disableServiceWorker(): Promise<void> {
+  const ses = session.fromPartition(PARTITION);
+  await ses.clearStorageData({ storages: ['serviceworkers'] });
+  ses.webRequest.onBeforeRequest({ urls: ['https://www.youtube.com/sw.js*'] }, (_details, callback) =>
+    callback({ cancel: true }),
   );
 }
 
@@ -51,12 +73,46 @@ function buildMenu(): void {
   Menu.setApplicationMenu(menu);
 }
 
+// Spike self-check: count Shorts on the home feed across first load, scroll
+// continuations and an in-app Home -> Watch -> Home round trip.
+async function probe(win: BrowserWindow): Promise<void> {
+  const wc = win.webContents;
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const count = async (label: string) => {
+    const result = await wc.executeJavaScript(`({
+      shorts: document.querySelectorAll('ytd-rich-shelf-renderer[is-shorts], ytd-reel-shelf-renderer, ytm-shorts-lockup-view-model, ytd-reel-item-renderer').length,
+      videos: document.querySelectorAll('ytd-rich-item-renderer').length,
+    })`);
+    console.log(`[probe] ${label}`, JSON.stringify(result));
+  };
+  for (let i = 0; i < 40; i++) {
+    const n = await wc.executeJavaScript(`document.querySelectorAll('ytd-rich-item-renderer').length`);
+    if (n >= 10) break;
+    await wait(500);
+  }
+  await wait(1500);
+  await count('first load');
+  for (let i = 0; i < 4; i++) {
+    await wc.executeJavaScript('window.scrollTo(0, document.documentElement.scrollHeight)');
+    await wait(2500);
+  }
+  await count('after scroll');
+  await wc.executeJavaScript(`document.querySelector('ytd-rich-item-renderer a[href^="/watch"]').click()`);
+  await wait(5000);
+  console.log('[probe] now at', wc.getURL());
+  await wc.executeJavaScript(`document.querySelector('ytd-topbar-logo-renderer a').click()`);
+  await wait(5000);
+  await count('back home (SPA)');
+  console.log('[probe] done');
+}
+
 app.whenReady().then(async () => {
   await components.whenReady();
   console.log('[widevine]', components.status());
 
   buildMenu();
   useHonestUaForSignIn();
+  if (REWRITE === 'cdp') await disableServiceWorker();
   mainWindow = createMainWindow();
   // Spike diagnostic: is the saved session present, and does YouTube accept it?
   mainWindow.webContents.on('did-finish-load', async () => {
@@ -67,6 +123,10 @@ app.whenReady().then(async () => {
       .catch(() => 'n/a');
     console.log('[session]', wc.getURL(), 'SID cookies:', sid.length, 'LOGGED_IN:', loggedIn);
   });
+
+  if (process.env.TUBE_PROBE === '1') mainWindow.webContents.once('did-finish-load', () => probe(mainWindow!));
+  if (REWRITE === 'cdp') await attachCdpRewrite(mainWindow.webContents, RULES);
+  console.log('[rewrite] candidate:', REWRITE);
 
   // YouTube redirects the first load (?themeRefresh=1), which aborts the original navigation.
   mainWindow.loadURL('https://www.youtube.com').catch((err) => {
