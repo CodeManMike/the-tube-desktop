@@ -54,3 +54,35 @@ test('thumbnails are only accepted from YouTube image hosts', () => {
   assert.equal(thumb('https://tracker.example.com/pixel.gif'), `https://i.ytimg.com/vi/${A}/mqdefault.jpg`);
   assert.equal(thumb('https://i.ytimg.com.evil.com/x.jpg'), `https://i.ytimg.com/vi/${A}/mqdefault.jpg`);
 });
+
+
+test('accepts a fetched page; truncates to 200; drops bad items; rejects a long token', () => {
+  const items = [...Array.from({ length: 250 }, () => item({ watchedPercent: 50 })), item({ videoId: 'bad' })];
+  const ev = validateEvent({ type: 'fetched', requestId: 'r1', ok: true, items, continuation: 'tok' });
+  assert.ok(ev && ev.type === 'fetched');
+  assert.equal(ev.items.length, 200);
+  assert.equal(ev.items[0].watchedPercent, 50);
+  assert.equal(validateEvent({ type: 'fetched', requestId: 'r1', ok: true, items: [], continuation: 'x'.repeat(5000) }), null);
+  const odd = validateEvent({ type: 'fetched', requestId: 'r1', ok: true, items: [item({ watchedPercent: 500 })], continuation: null });
+  assert.ok(odd && odd.type === 'fetched' && !('watchedPercent' in odd.items[0]));
+});
+
+test('accepts shuffle actions; rejects a bad channelId or an over-long query', () => {
+  const ch = 'UC' + 'r'.repeat(22);
+  assert.deepEqual(validateEvent({ type: 'shuffle', action: 'creator', channelId: ch, name: 'Rick' }), { type: 'shuffle', action: 'creator', channelId: ch, name: 'Rick' });
+  assert.deepEqual(validateEvent({ type: 'shuffle', action: 'topic', query: 'lofi' }), { type: 'shuffle', action: 'topic', query: 'lofi' });
+  assert.deepEqual(validateEvent({ type: 'shuffle', action: 'stop' }), { type: 'shuffle', action: 'stop' });
+  assert.equal(validateEvent({ type: 'shuffle', action: 'creator', channelId: 'nope', name: 'x' }), null);
+  assert.equal(validateEvent({ type: 'shuffle', action: 'topic', query: 'x'.repeat(201) }), null);
+  assert.equal(validateEvent({ type: 'shuffle', action: 'topic', query: '   ' }), null);
+});
+
+test('watchData carries the creator and playlist size when valid', () => {
+  const ev = validateEvent({ type: 'watchData', videoId: A, listParam: null, playlist: null, autoplay: null,
+    owner: { channelId: 'UC' + 'r'.repeat(22), name: 'Rick' }, playlistMeta: { totalVideos: 76, isInfinite: false } });
+  assert.ok(ev && ev.type === 'watchData');
+  assert.deepEqual(ev.owner, { channelId: 'UC' + 'r'.repeat(22), name: 'Rick' });
+  assert.deepEqual(ev.playlistMeta, { totalVideos: 76, isInfinite: false });
+  const bad = validateEvent({ type: 'watchData', videoId: A, listParam: null, playlist: null, autoplay: null, owner: { channelId: 'x', name: 'y' }, playlistMeta: 'z' });
+  assert.ok(bad && bad.type === 'watchData' && bad.owner === null && bad.playlistMeta === null);
+});

@@ -233,6 +233,18 @@ export class QueueModel {
     return navigate(point.videoId, point.timeSec);
   }
 
+  // The full playlist arrived (YouTube only sends a window of ~25 items at first). Applies
+  // only while the queue still comes from that playlist, keeping the current video.
+  extendPlaylist(listId: string, items: NewItem[]): boolean {
+    if (this.s.sourceListId !== listId) return false;
+    const currentId = this.currentVideoId();
+    const at = currentId === null ? -1 : items.findIndex((i) => i.videoId === currentId);
+    if (currentId !== null && at < 0) return false;
+    this.s.items = items.map((i) => this.withUid(i));
+    this.s.current = currentId === null ? null : at;
+    return true;
+  }
+
   setShuffle(source: ShuffleSource | null): void {
     this.s.shuffle = source;
     this.s.shuffleExhausted = false;

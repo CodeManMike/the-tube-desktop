@@ -11,5 +11,10 @@ if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('tt
       ipcRenderer.removeAllListeners('queue:state');
       ipcRenderer.on('queue:state', (_event, payload) => cb(payload));
     },
+    // Page-fetch requests for shuffle sources and full playlists (see FetchBridge).
+    onFetch: (cb: (request: unknown) => void) => {
+      ipcRenderer.removeAllListeners('queue:fetch');
+      ipcRenderer.on('queue:fetch', (_event, request) => cb(request));
+    },
   },
 });

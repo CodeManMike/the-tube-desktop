@@ -253,3 +253,20 @@ test('a playlist replace clears shuffle; back restores the old queue with its sh
   m.back();
   assert.deepEqual(m.state().shuffle, CREATOR);
 });
+
+
+test('extendPlaylist replaces items and keeps current when the list still matches', () => {
+  const m = model();
+  m.replaceWithPlaylist('PLx', [v(B), v(C)], C, 0);
+  assert.equal(m.extendPlaylist('PLx', [v(A), v(B), v(C), v(D)]), true);
+  assert.deepEqual(ids(m), [A, B, C, D]);
+  assert.equal(currentId(m), C);
+});
+
+test('extendPlaylist is a no-op after the queue moved on', () => {
+  const m = model();
+  m.replaceWithPlaylist('PLx', [v(B), v(C)], B, 0);
+  m.replaceWithPlaylist('PLy', [v(D)], D, 0);
+  assert.equal(m.extendPlaylist('PLx', [v(A), v(B), v(C)]), false);
+  assert.deepEqual(ids(m), [D]);
+});

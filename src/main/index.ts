@@ -149,11 +149,21 @@ if (isPrimary) app.whenReady().then(async () => {
   const userData = app.getPath('userData');
   const queueStore = new QueueStore(path.join(userData, 'queue.json'));
   const history = new HistoryStore(path.join(userData, 'history.json'));
-  queueService = new QueueService(new QueueModel(queueStore.load()), queueStore, history, async (url) => {
-    const res = await net.fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  });
+  const queueDefs = ALL_PLUGINS.find((p) => p.manifest.id === 'queue')?.manifest.settings ?? [];
+  queueService = new QueueService(
+    new QueueModel(queueStore.load()),
+    queueStore,
+    history,
+    async (url) => {
+      const res = await net.fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    },
+    () => {
+      const v = store.values('queue', queueDefs);
+      return { batchSize: Number(v.batchSize ?? 10), watchedPercent: Number(v.watchedPercent ?? 80) };
+    },
+  );
   queueService.attach(mainWindow.webContents);
   setInterval(() => history.flush(), 30_000);
   app.on('before-quit', () => queueService?.flush());
