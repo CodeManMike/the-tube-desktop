@@ -147,6 +147,20 @@ if (isPrimary) app.whenReady().then(async () => {
   });
 
   // A plugin the page turned off after repeated failures stays off for this session.
+  // Dev-only research hook: TTD_DEV_EVAL=<file> runs that script in the page after each
+  // load and logs what it returns. Never set in normal use.
+  const devEval = process.env.TTD_DEV_EVAL;
+  if (devEval) {
+    mainWindow.webContents.on('did-finish-load', async () => {
+      const wc = mainWindow!.webContents;
+      if (!wc.getURL().startsWith('https://www.youtube.com/')) return;
+      const result = await wc
+        .executeJavaScript(require('fs').readFileSync(devEval, 'utf8'))
+        .catch((err: Error) => `error: ${err.message}`);
+      console.log('[dev-eval]', JSON.stringify(result));
+    });
+  }
+
   bundle = await attachPageBundle(
     mainWindow.webContents,
     () => registry.pageEntries(),
