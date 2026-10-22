@@ -35,7 +35,7 @@ export class PluginRegistry {
     return this.plugins.filter((p) => this.enabled(p) && !this.sessionDisabled.has(p.manifest.id)).map((p) => {
       const transforms: Partial<Record<Endpoint, string>> = {};
       for (const [endpoint, fn] of Object.entries(p.transforms ?? {})) {
-        transforms[endpoint as Endpoint] = asExpression(fn);
+        transforms[endpoint as Endpoint] = Array.isArray(fn) ? `[${fn.map(asExpression).join(',')}]` : asExpression(fn);
       }
       return {
         id: p.manifest.id,

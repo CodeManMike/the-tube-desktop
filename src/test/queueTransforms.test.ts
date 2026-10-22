@@ -119,3 +119,12 @@ test('each transform runs standalone in a fresh context (self-contained)', () =>
     assert.doesNotThrow(() => standalone(watchResponse(), {}), fn.name);
   }
 });
+
+import { queuePageScript } from '../plugins/queue/pageScript';
+
+test('the queue page script serialises and exits quietly without the bridge', () => {
+  const sandbox: any = { window: {} };
+  sandbox.globalThis = sandbox;
+  const standalone = vm.runInNewContext(asExpression(queuePageScript), sandbox);
+  assert.doesNotThrow(() => standalone({}));
+});

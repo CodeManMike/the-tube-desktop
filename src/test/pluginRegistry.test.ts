@@ -66,3 +66,11 @@ test('a plugin disabled for the session is left out of pageEntries until restart
   assert.deepEqual(reg.pageEntries().map((e) => e.id), ['b']);
   assert.deepEqual(reg.list().map((p) => [p.manifest.id, p.enabled]), [['a', true], ['b', true]]);
 });
+
+test('a list of transforms is serialised as an evaluable array', () => {
+  const p = plugin('m', { transforms: { browse: [(d: any) => ({ ...d, a: 1 }), (d: any) => ({ ...d, b: 2 })] } });
+  const [entry] = new PluginRegistry([p], store()).pageEntries();
+  const fns = new Function('return ' + entry.transforms.browse)();
+  assert.equal(fns.length, 2);
+  assert.deepEqual(fns[1](fns[0]({}, {}), {}), { a: 1, b: 2 });
+});

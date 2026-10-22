@@ -132,3 +132,13 @@ test('bundle works where the page forbids eval (strict CSP)', () => {
   vm.runInContext('ytInitialData = { v: 1 }', context);
   assert.deepEqual({ ...sandbox.ytInitialData }, { v: 1, ok: true });
 });
+
+test('an endpoint can carry several transforms, applied in order', async () => {
+  fakePage();
+  const e: RuntimeEntry = {
+    id: 'multi', settings: {}, css: null, script: null,
+    transforms: { browse: [(d: any) => ({ ...d, steps: ['a'] }), (d: any) => ({ ...d, steps: [...d.steps, 'b'] })] as any },
+  };
+  pageRuntime([e]);
+  assert.deepEqual((await (await fetch(BROWSE)).json()).steps, ['a', 'b']);
+});
