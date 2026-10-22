@@ -1,0 +1,15 @@
+{
+  "name": "the-tube",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Phase 0 spike: a dedicated desktop YouTube app",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsc && electron dist/main.js"
+  },
+  "devDependencies": {
+    "electron": "https://github.com/castlabs/electron-releases#v44.5.1+wvcus",
+    "typescript": "^5.9.3"
+  }
+}
