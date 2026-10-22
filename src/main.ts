@@ -3,6 +3,10 @@ import { attachCdpRewrite } from './rewrite/cdp';
 import { attachPageRewrite } from './rewrite/page';
 import { Rule } from './rewrite/types';
 import { hideShorts } from './rules/hideShorts';
+import { PARTITION } from './config';
+import { closePip, getPip, isPipOpen, openPip } from './pip/pipWindow';
+
+export { PARTITION };
 
 // Spike switches: TUBE_REWRITE=cdp|page|off picks the rewrite candidate;
 // TUBE_BREAK=1 adds a rule that always throws, to prove the fail-safe.
@@ -11,8 +15,6 @@ const RULES: Rule[] = [hideShorts];
 if (process.env.TUBE_BREAK === '1') {
   RULES.push({ name: 'alwaysThrows', transform: () => { throw new Error('deliberate'); } });
 }
-
-export const PARTITION = 'persist:tube';
 
 // YouTube gets a plain Chrome UA. Google sign-in gets the honest Electron UA instead:
 // a UA claiming Chrome while client hints say "Chromium" is what trips
@@ -66,12 +68,87 @@ function buildMenu(): void {
           accelerator: 'Ctrl+Shift+I',
           click: () => mainWindow?.webContents.toggleDevTools(),
         },
+        {
+          label: 'Picture-in-picture',
+          accelerator: 'Ctrl+Shift+P',
+          click: () => (isPipOpen() ? closePip() : mainWindow && openPip(mainWindow)),
+        },
+        {
+          label: 'Probe native PiP',
+          accelerator: 'Ctrl+Shift+D',
+          click: () => mainWindow && probeNativePip(mainWindow),
+        },
         { role: 'reload' },
         { role: 'quit' },
       ],
     },
   ]);
   Menu.setApplicationMenu(menu);
+}
+
+// Spike: what native PiP does Electron offer? Runs with a user gesture so
+// requestPictureInPicture() is allowed.
+async function probeNativePip(win: BrowserWindow): Promise<void> {
+  const result = await win.webContents.executeJavaScript(`(async () => {
+    const out = { documentPiP: 'documentPictureInPicture' in window };
+    const v = document.querySelector('#movie_player video');
+    if (!v) return { ...out, video: false };
+    try {
+      await v.requestPictureInPicture();
+      out.standardPiP = !!document.pictureInPictureElement;
+    } catch (e) {
+      out.standardPiP = 'error: ' + e.message;
+    }
+    return out;
+  })()`, true);
+  console.log('[pip-native]', JSON.stringify(result));
+}
+
+// Spike self-check for PiP: no-video guard, native PiP, our window, handoff.
+async function pipProbe(win: BrowserWindow): Promise<void> {
+  const wc = win.webContents;
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const js = (target: Electron.WebContents, code: string) => target.executeJavaScript(code);
+  for (let i = 0; i < 40 && (await js(wc, `document.querySelectorAll('ytd-rich-item-renderer').length`)) < 10; i++) {
+    await wait(500);
+  }
+  await openPip(win); // on the home page: expect "[pip] no video"
+  console.log('[pip-probe] open on home -> pip open?', isPipOpen());
+
+  await js(wc, `document.querySelector('ytd-rich-item-renderer a[href^="/watch"]').click()`);
+  await wait(8000);
+  await probeNativePip(win);
+  await wait(2000);
+  await js(wc, `document.pictureInPictureElement && document.exitPictureInPicture()`).catch(() => {});
+  await wait(1000);
+
+  const mainBefore = await js(wc, `document.querySelector('#movie_player').getCurrentTime()`);
+  await openPip(win);
+  await wait(10000);
+  const pip = getPip();
+  if (!pip) return console.log('[pip-probe] FAIL: no pip window');
+  const pc = pip.webContents;
+  const state = await js(pc, `(() => ({
+    url: location.pathname + location.search,
+    time: document.querySelector('#movie_player').getCurrentTime(),
+    overlay: !!document.getElementById('tube-pip'),
+    bridge: typeof window.tube,
+  }))()`);
+  const mainState = await js(wc, `document.querySelector('#movie_player').getPlayerState()`);
+  console.log('[pip-probe] main was at', mainBefore.toFixed(1), 'main state', mainState, 'pip', JSON.stringify(state),
+    'onTop', pip.isAlwaysOnTop(), 'bounds', JSON.stringify(pip.getBounds()));
+  require('fs').writeFileSync(require('path').join(__dirname, '..', '.superpowers', 'pip.png'), (await pc.capturePage()).toPNG());
+
+  await js(pc, `window.tube.toggleOnTop()`);
+  await wait(500);
+  console.log('[pip-probe] after toggle onTop', pip.isAlwaysOnTop());
+
+  const pipTime = await js(pc, `document.querySelector('#movie_player').getCurrentTime()`);
+  await js(pc, `window.tube.close(${pipTime})`);
+  await wait(3000);
+  const back = await js(wc, `(() => { const p = document.querySelector('#movie_player'); return { time: p.getCurrentTime(), state: p.getPlayerState() }; })()`);
+  console.log('[pip-probe] pip closed at', pipTime.toFixed(1), 'main now', JSON.stringify(back), 'pip open?', isPipOpen());
+  console.log('[pip-probe] done');
 }
 
 // Spike self-check: count Shorts on the home feed across first load, scroll
@@ -135,6 +212,7 @@ app.whenReady().then(async () => {
     await attachPageRewrite(mainWindow.webContents, RULES);
   }
   if (process.env.TUBE_PROBE === '1') mainWindow.webContents.once('did-finish-load', () => probe(mainWindow!));
+  if (process.env.TUBE_PIPPROBE === '1') mainWindow.webContents.once('did-finish-load', () => pipProbe(mainWindow!));
   console.log('[rewrite] candidate:', REWRITE);
 
   // YouTube redirects the first load (?themeRefresh=1), which aborts the original navigation.
