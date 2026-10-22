@@ -215,8 +215,32 @@ app.whenReady().then(async () => {
   if (process.env.TUBE_PIPPROBE === '1') mainWindow.webContents.once('did-finish-load', () => pipProbe(mainWindow!));
   console.log('[rewrite] candidate:', REWRITE);
 
+  // Spike perf runs: TUBE_PLAY=<videoId> TUBE_QUALITY=hd1080|hd2160 opens a video at a pinned quality.
+  const play = process.env.TUBE_PLAY;
+  if (play) {
+    const quality = process.env.TUBE_QUALITY ?? 'hd1080';
+    mainWindow.webContents.once('did-finish-load', async () => {
+      await new Promise((r) => setTimeout(r, 6000));
+      const got = await mainWindow!.webContents.executeJavaScript(`(() => {
+        const p = document.querySelector('#movie_player');
+        p.setPlaybackQualityRange('${quality}', '${quality}');
+        p.playVideo();
+        return p.getPlaybackQuality();
+      })()`);
+      console.log('[perf] requested', quality, 'was', got);
+      await new Promise((r) => setTimeout(r, 8000));
+      const now = await mainWindow!.webContents.executeJavaScript(`(() => {
+        const p = document.querySelector('#movie_player');
+        const v = p.querySelector('video');
+        const q = v.getVideoPlaybackQuality();
+        return { quality: p.getPlaybackQuality(), w: v.videoWidth, h: v.videoHeight, dropped: q.droppedVideoFrames, total: q.totalVideoFrames };
+      })()`);
+      console.log('[perf] playing', play, JSON.stringify(now));
+    });
+  }
+
   // YouTube redirects the first load (?themeRefresh=1), which aborts the original navigation.
-  mainWindow.loadURL('https://www.youtube.com').catch((err) => {
+  mainWindow.loadURL(play ? `https://www.youtube.com/watch?v=${play}` : 'https://www.youtube.com').catch((err) => {
     if (err.code !== 'ERR_ABORTED') console.error('[load]', err);
   });
 });
