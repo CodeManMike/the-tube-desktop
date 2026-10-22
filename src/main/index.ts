@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, components, screen, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, components, net, screen, session, shell } from 'electron';
 import path from 'path';
 import { PARTITION } from './config';
 import { migrateLegacyProfile } from './migrate';
@@ -9,6 +9,10 @@ import { SettingsStore } from './settingsStore';
 import { closeSettingsWindow, openSettingsWindow, registerSettingsIpc } from './settingsWindow';
 import { restoreBounds } from './windowState';
 import { ALL_PLUGINS } from '../plugins';
+import { HistoryStore } from './history/historyStore';
+import { QueueModel } from './queue/model';
+import { QueueService } from './queue/queueService';
+import { QueueStore } from './queue/queueStore';
 
 const ICON = path.join(app.getAppPath(), 'assets', 'icons', 'favicon.ico');
 const HOME = 'https://www.youtube.com';
@@ -27,6 +31,7 @@ app.setAppUserModelId('com.thetubedesktop.app');
 
 let mainWindow: BrowserWindow | null = null;
 let bundle: PageBundleHandle | null = null;
+let queueService: QueueService | null = null;
 
 // Two instances on one profile can't share the cookie database, so a second one
 // would start signed out. Hand over to the running window instead.
@@ -68,7 +73,12 @@ export function createMainWindow(store: SettingsStore): BrowserWindow {
     autoHideMenuBar: true,
     icon: ICON,
     title: 'The Tube Desktop',
-    webPreferences: { partition: PARTITION, contextIsolation: true, sandbox: true },
+    webPreferences: {
+      partition: PARTITION,
+      contextIsolation: true,
+      sandbox: true,
+      preload: path.join(__dirname, '..', 'preload', 'main.js'),
+    },
   });
   win.setMenuBarVisibility(false);
   if (saved?.maximized) win.maximize();
@@ -81,6 +91,7 @@ export function createMainWindow(store: SettingsStore): BrowserWindow {
     const route = routeUrl(url);
     if (route.action === 'app') win.loadURL(url).catch(() => {});
     else if (route.action === 'external') openInBrowser(route.url);
+    else if (route.action === 'queueAdd') queueService?.addById(route.videoId);
     return { action: 'deny' };
   });
   const guard = (event: Electron.Event, url: string) => {
@@ -88,6 +99,7 @@ export function createMainWindow(store: SettingsStore): BrowserWindow {
     if (route.action === 'app') return;
     event.preventDefault();
     if (route.action === 'external') openInBrowser(route.url);
+    else if (route.action === 'queueAdd') queueService?.addById(route.videoId);
   };
   win.webContents.on('will-navigate', (event, url) => {
     if (url !== 'about:blank') guard(event, url);
@@ -132,6 +144,19 @@ if (isPrimary) app.whenReady().then(async () => {
   buildMenu();
   configureSession();
   mainWindow = createMainWindow(store);
+
+  // The queue is owned here, persisted on every change, and survives restarts.
+  const userData = app.getPath('userData');
+  const queueStore = new QueueStore(path.join(userData, 'queue.json'));
+  const history = new HistoryStore(path.join(userData, 'history.json'));
+  queueService = new QueueService(new QueueModel(queueStore.load()), queueStore, history, async (url) => {
+    const res = await net.fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  });
+  queueService.attach(mainWindow.webContents);
+  setInterval(() => history.flush(), 30_000);
+  app.on('before-quit', () => queueService?.flush());
 
   // Diagnostic: is the saved session present, and does YouTube accept it?
   mainWindow.webContents.on('did-finish-load', async () => {

@@ -28,7 +28,11 @@ export function permissionAllowed(permission: string): boolean {
   return ALLOWED_PERMISSIONS.has(permission);
 }
 
-export type Route = { action: 'app' } | { action: 'external'; url: string } | { action: 'block' };
+export type Route =
+  | { action: 'app' }
+  | { action: 'external'; url: string }
+  | { action: 'queueAdd'; videoId: string }
+  | { action: 'block' };
 
 const BLOCK: Route = { action: 'block' };
 
@@ -48,6 +52,11 @@ function external(url: string): Route {
 export function routeUrl(url: string): Route {
   if (!isInAppUrl(url)) return external(url);
   const u = new URL(url);
+  // TTD's rewritten "Add to queue" command (see plugins/queue/transforms.ts).
+  if (u.hostname === 'www.youtube.com' && u.pathname === '/ttd/queue-add') {
+    const id = u.searchParams.get('v') ?? '';
+    return /^[A-Za-z0-9_-]{11}$/.test(id) ? { action: 'queueAdd', videoId: id } : BLOCK;
+  }
   // YouTube's outbound-link interstitial: send its real target straight to the browser.
   if (u.hostname.endsWith('youtube.com') && u.pathname === '/redirect') {
     const target = u.searchParams.get('q');

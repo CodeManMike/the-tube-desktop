@@ -43,3 +43,8 @@ test('routeUrl: in-app, external and blank', () => {
   assert.deepEqual(routeUrl('https://example.com'), { action: 'external', url: 'https://example.com/' });
   assert.deepEqual(routeUrl('about:blank'), { action: 'block' });
 });
+
+test('routeUrl: TTD queue-add links become queueAdd with a valid id', () => {
+  assert.deepEqual(routeUrl('https://www.youtube.com/ttd/queue-add?v=aaaaaaaaaaa'), { action: 'queueAdd', videoId: 'aaaaaaaaaaa' });
+  assert.deepEqual(routeUrl('https://www.youtube.com/ttd/queue-add?v=bad'), { action: 'block' });
+});
