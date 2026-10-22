@@ -59,3 +59,10 @@ test('a throwing main hook is logged and other hooks still run', () => {
   assert.equal(ran, true);
   assert.deepEqual(logs, ['[ttd] bad main hook failed: boom']);
 });
+
+test('a plugin disabled for the session is left out of pageEntries until restart', () => {
+  const reg = new PluginRegistry([plugin('a'), plugin('b')], store());
+  reg.disableForSession('a');
+  assert.deepEqual(reg.pageEntries().map((e) => e.id), ['b']);
+  assert.deepEqual(reg.list().map((p) => [p.manifest.id, p.enabled]), [['a', true], ['b', true]]);
+});

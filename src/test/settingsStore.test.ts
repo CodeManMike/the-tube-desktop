@@ -69,3 +69,37 @@ test('setValue with an invalid value stores the default, not the bad value', () 
   store.setValue('p', DEFS[0], 'abc');
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).plugins.p.values.n, 5);
 });
+
+test('wrong-shaped plugin entries fall back and can still be saved', () => {
+  const file = tmpFile();
+  fs.writeFileSync(file, JSON.stringify({ plugins: { a: 'x', b: { enabled: 'yes', values: 'x' } } }));
+  const store = new SettingsStore(file);
+  assert.equal(store.isEnabled('a', true), true);
+  store.setEnabled('a', false);
+  store.setValue('b', DEFS[0], 7);
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(saved.plugins.a.enabled, false);
+  assert.equal(saved.plugins.b.values.n, 7);
+});
+
+test('plugins as an array is reset instead of silently dropping writes', () => {
+  const file = tmpFile();
+  fs.writeFileSync(file, JSON.stringify({ plugins: [] }));
+  new SettingsStore(file).setEnabled('a', false);
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).plugins.a.enabled, false);
+});
+
+test('invalid window state is ignored', () => {
+  const file = tmpFile();
+  fs.writeFileSync(file, JSON.stringify({ plugins: {}, window: { x: 1, y: 2, width: 'big', height: 600, maximized: 'false' } }));
+  assert.equal(new SettingsStore(file).getWindowState(), undefined);
+});
+
+test('a failed write is logged, not thrown', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ttd-settings-'));
+  const file = path.join(dir, 'settings.json');
+  fs.mkdirSync(file); // the target is a directory, so the rename must fail
+  const store = new SettingsStore(file);
+  assert.doesNotThrow(() => store.setEnabled('a', false));
+  assert.equal(store.isEnabled('a', true), false);
+});

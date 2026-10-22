@@ -21,3 +21,25 @@ test('permissions: only what playback needs', () => {
   assert.equal(permissionAllowed('notifications'), false);
   assert.equal(permissionAllowed('geolocation'), false);
 });
+
+import { routeUrl } from '../main/policy';
+
+test('routeUrl: dangerous schemes are blocked, never handed to Windows', () => {
+  for (const url of ['search-ms:query=x&crumb=location:\\evil\share', 'ms-msdt:/id x', 'file:///C:/x.bat', 'ms-settings:', 'javascript:alert(1)', 'data:text/html,x']) {
+    assert.deepEqual(routeUrl(url), { action: 'block' }, url);
+  }
+});
+
+test('routeUrl: YouTube /redirect links open their real target externally', () => {
+  assert.deepEqual(routeUrl('https://www.youtube.com/redirect?event=video_description&q=https%3A%2F%2Fexample.com%2Fpage'), {
+    action: 'external',
+    url: 'https://example.com/page',
+  });
+  assert.deepEqual(routeUrl('https://www.youtube.com/redirect?q=search-ms%3Aquery%3Dx'), { action: 'block' });
+});
+
+test('routeUrl: in-app, external and blank', () => {
+  assert.deepEqual(routeUrl('https://www.youtube.com/watch?v=abc'), { action: 'app' });
+  assert.deepEqual(routeUrl('https://example.com'), { action: 'external', url: 'https://example.com/' });
+  assert.deepEqual(routeUrl('about:blank'), { action: 'block' });
+});

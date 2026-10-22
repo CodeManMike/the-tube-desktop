@@ -1,8 +1,15 @@
-import type { PageEntry } from '../shared/plugin';
 
 // Runs in YouTube's main world before any page script. It is serialised with
 // toString() into the page bundle, so it must not reference anything outside its body.
-export function pageRuntime(entries: PageEntry[]): void {
+export type RuntimeEntry = {
+  id: string;
+  settings: Record<string, unknown>;
+  transforms: Partial<Record<string, (data: any, settings: Record<string, unknown>) => any>>;
+  css: string | null;
+  script: ((settings: Record<string, unknown>) => void) | null;
+};
+
+export function pageRuntime(entries: RuntimeEntry[]): void {
   // The bundle is registered for every document in the window, Google sign-in included.
   if (location.hostname !== 'www.youtube.com') return;
 
@@ -10,17 +17,13 @@ export function pageRuntime(entries: PageEntry[]): void {
   type Fn = (data: any, settings: Record<string, unknown>) => any;
   type Live = { id: string; settings: Record<string, unknown>; fns: Record<string, Fn>; failures: number; off: boolean };
 
-  const live: Live[] = entries.map((e) => {
-    const fns: Record<string, Fn> = {};
-    for (const [endpoint, src] of Object.entries(e.transforms)) {
-      try {
-        fns[endpoint] = new Function('return ' + src)();
-      } catch (err) {
-        console.warn(`[ttd] ${e.id} transform ${endpoint} failed to load: ${(err as Error).message}`);
-      }
-    }
-    return { id: e.id, settings: e.settings, fns, failures: 0, off: false };
-  });
+  const live: Live[] = entries.map((e) => ({
+    id: e.id,
+    settings: e.settings,
+    fns: e.transforms as Record<string, Fn>,
+    failures: 0,
+    off: false,
+  }));
   const wants = (endpoint: string) => live.some((p) => p.fns[endpoint]);
 
   // One quiet notice per disabled plugin. DOM APIs only: YouTube enforces Trusted Types.
@@ -153,7 +156,7 @@ export function pageRuntime(entries: PageEntry[]): void {
         }
         if (e.script) {
           try {
-            new Function('return ' + e.script)()(e.settings);
+            e.script(e.settings);
           } catch (err) {
             console.warn(`[ttd] ${e.id} page script failed: ${(err as Error).message}`);
           }

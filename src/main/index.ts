@@ -4,9 +4,9 @@ import { PARTITION } from './config';
 import { migrateLegacyProfile } from './migrate';
 import { attachPageBundle, PageBundleHandle } from './pageBundle';
 import { PluginRegistry } from './pluginRegistry';
-import { isInAppUrl, permissionAllowed } from './policy';
+import { permissionAllowed, routeUrl } from './policy';
 import { SettingsStore } from './settingsStore';
-import { openSettingsWindow, registerSettingsIpc } from './settingsWindow';
+import { closeSettingsWindow, openSettingsWindow, registerSettingsIpc } from './settingsWindow';
 import { restoreBounds } from './windowState';
 import { ALL_PLUGINS } from '../plugins';
 
@@ -43,6 +43,10 @@ if (!isPrimary) {
   });
 }
 
+function openInBrowser(url: string): void {
+  shell.openExternal(url).catch((err) => console.warn('[open]', err.message));
+}
+
 function configureSession(): void {
   const ses = session.fromPartition(PARTITION);
   ses.webRequest.onBeforeSendHeaders({ urls: SIGNIN_URLS }, (details, callback) => {
@@ -71,16 +75,30 @@ export function createMainWindow(store: SettingsStore): BrowserWindow {
 
   win.on('close', () => store.setWindowState({ ...win.getNormalBounds(), maximized: win.isMaximized() }));
 
-  // Only YouTube and Google sign-in load in the signed-in session; other links open in the default browser.
+  // Only YouTube and Google sign-in load in the signed-in session. Web links open in the
+  // default browser; every other scheme is dropped (see routeUrl).
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isInAppUrl(url)) win.loadURL(url);
-    else shell.openExternal(url);
+    const route = routeUrl(url);
+    if (route.action === 'app') win.loadURL(url).catch(() => {});
+    else if (route.action === 'external') openInBrowser(route.url);
     return { action: 'deny' };
   });
-  win.webContents.on('will-navigate', (event, url) => {
-    if (isInAppUrl(url) || url === 'about:blank') return;
+  const guard = (event: Electron.Event, url: string) => {
+    const route = routeUrl(url);
+    if (route.action === 'app') return;
     event.preventDefault();
-    shell.openExternal(url);
+    if (route.action === 'external') openInBrowser(route.url);
+  };
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url !== 'about:blank') guard(event, url);
+  });
+  // Server-side redirects (e.g. an in-app URL bouncing to another site) skip will-navigate.
+  win.webContents.on('will-redirect', (event, url, _inPlace, isMainFrame) => {
+    if (isMainFrame) guard(event, url);
+  });
+  win.on('closed', () => {
+    mainWindow = null;
+    closeSettingsWindow();
   });
   return win;
 }
@@ -119,13 +137,24 @@ if (isPrimary) app.whenReady().then(async () => {
   mainWindow.webContents.on('did-finish-load', async () => {
     const wc = mainWindow!.webContents;
     const sid = await wc.session.cookies.get({ domain: '.youtube.com', name: 'SID' });
-    const loggedIn = await wc
-      .executeJavaScript('window.ytcfg ? ytcfg.get("LOGGED_IN") : "no ytcfg"')
-      .catch(() => 'n/a');
-    console.log('[session]', wc.getURL(), 'SID cookies:', sid.length, 'LOGGED_IN:', loggedIn);
+    const page = await wc
+      .executeJavaScript(
+        '({ loggedIn: window.ytcfg ? ytcfg.get("LOGGED_IN") : "no ytcfg",' +
+          ' rewrite: !!(Object.getOwnPropertyDescriptor(window, "ytInitialData") || {}).get })',
+      )
+      .catch(() => ({ loggedIn: 'n/a', rewrite: 'n/a' }));
+    console.log('[session]', wc.getURL(), 'SID cookies:', sid.length, 'LOGGED_IN:', page.loggedIn, 'rewrite active:', page.rewrite);
   });
 
-  bundle = await attachPageBundle(mainWindow.webContents, () => registry.pageEntries());
+  // A plugin the page turned off after repeated failures stays off for this session.
+  bundle = await attachPageBundle(
+    mainWindow.webContents,
+    () => registry.pageEntries(),
+    (id) => {
+      registry.disableForSession(id);
+      bundle?.refresh().catch((err) => console.warn('[bundle] refresh failed:', err.message));
+    },
+  );
 
   // A settings change rebuilds the page bundle and reloads YouTube; debounced so a
   // burst of edits causes one reload.
@@ -133,8 +162,12 @@ if (isPrimary) app.whenReady().then(async () => {
   registerSettingsIpc(registry, store, () => {
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(async () => {
-      await bundle?.refresh();
-      mainWindow?.webContents.reload();
+      try {
+        await bundle?.refresh();
+        mainWindow?.webContents.reload();
+      } catch (err) {
+        console.warn('[settings] apply failed:', (err as Error).message);
+      }
     }, 400);
   });
   registry.runMainHooks({ mainWindow, store, log: (msg) => console.log(msg) });

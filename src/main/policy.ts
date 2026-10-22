@@ -27,3 +27,31 @@ const ALLOWED_PERMISSIONS = new Set(['fullscreen', 'media', 'clipboard-sanitized
 export function permissionAllowed(permission: string): boolean {
   return ALLOWED_PERMISSIONS.has(permission);
 }
+
+export type Route = { action: 'app' } | { action: 'external'; url: string } | { action: 'block' };
+
+const BLOCK: Route = { action: 'block' };
+
+// Only plain web links ever leave the app. Anything else (search-ms:, ms-msdt:, file:,
+// javascript:...) would be handed to a Windows protocol handler, so it is dropped.
+function external(url: string): Route {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? { action: 'external', url: u.href } : BLOCK;
+  } catch {
+    return BLOCK;
+  }
+}
+
+// Where a navigation or window.open should go: stay in the signed-in window, open in
+// the default browser, or nowhere.
+export function routeUrl(url: string): Route {
+  if (!isInAppUrl(url)) return external(url);
+  const u = new URL(url);
+  // YouTube's outbound-link interstitial: send its real target straight to the browser.
+  if (u.hostname.endsWith('youtube.com') && u.pathname === '/redirect') {
+    const target = u.searchParams.get('q');
+    return target ? external(target) : BLOCK;
+  }
+  return { action: 'app' };
+}

@@ -10,6 +10,8 @@ export function asExpression(fn: Function): string {
 }
 
 export class PluginRegistry {
+  private readonly sessionDisabled = new Set<string>();
+
   constructor(
     private readonly plugins: Plugin[],
     private readonly store: SettingsStore,
@@ -30,7 +32,7 @@ export class PluginRegistry {
   }
 
   pageEntries(): PageEntry[] {
-    return this.plugins.filter((p) => this.enabled(p)).map((p) => {
+    return this.plugins.filter((p) => this.enabled(p) && !this.sessionDisabled.has(p.manifest.id)).map((p) => {
       const transforms: Partial<Record<Endpoint, string>> = {};
       for (const [endpoint, fn] of Object.entries(p.transforms ?? {})) {
         transforms[endpoint as Endpoint] = asExpression(fn);
@@ -43,6 +45,11 @@ export class PluginRegistry {
         script: p.pageScript && asExpression(p.pageScript),
       };
     });
+  }
+
+  // Spec §6: a plugin that keeps failing is off for the rest of the session.
+  disableForSession(id: string): void {
+    this.sessionDisabled.add(id);
   }
 
   runMainHooks(ctx: MainContext): void {

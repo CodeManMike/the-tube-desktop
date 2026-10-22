@@ -6,6 +6,30 @@ export type WindowState = { x: number; y: number; width: number; height: number;
 type PluginState = { enabled?: boolean; values?: Record<string, unknown> };
 type SettingsFile = { plugins: Record<string, PluginState>; window?: WindowState };
 
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+function validWindowState(v: unknown): WindowState | undefined {
+  if (!isPlainObject(v)) return undefined;
+  const { x, y, width, height, maximized } = v;
+  const nums = [x, y, width, height].every((n) => typeof n === 'number' && Number.isFinite(n));
+  return nums && typeof maximized === 'boolean' ? (v as WindowState) : undefined;
+}
+
+// Keep only well-formed entries, so a hand-edited file can never wedge later writes.
+function sanitise(parsed: unknown): SettingsFile {
+  if (!isPlainObject(parsed) || !isPlainObject(parsed.plugins)) throw new Error('unexpected shape');
+  const plugins: Record<string, PluginState> = {};
+  for (const [id, entry] of Object.entries(parsed.plugins)) {
+    if (!isPlainObject(entry)) continue;
+    plugins[id] = {
+      ...(typeof entry.enabled === 'boolean' && { enabled: entry.enabled }),
+      ...(isPlainObject(entry.values) && { values: entry.values }),
+    };
+  }
+  return { plugins, window: validWindowState(parsed.window) };
+}
+
 export class SettingsStore {
   private data: SettingsFile;
 
@@ -15,24 +39,33 @@ export class SettingsStore {
 
   private load(): SettingsFile {
     try {
-      const parsed = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      if (parsed && typeof parsed === 'object' && parsed.plugins && typeof parsed.plugins === 'object') {
-        return parsed as SettingsFile;
-      }
-      console.warn('[settings] reset: unexpected shape');
+      return sanitise(JSON.parse(fs.readFileSync(this.file, 'utf8')));
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
         console.warn(`[settings] reset: ${(err as Error).message}`);
       }
+      return { plugins: {} };
     }
-    return { plugins: {} };
   }
 
   // Write to a temp file then rename, so a crash mid-write never leaves a torn file.
+  // On Windows the rename can briefly fail while antivirus or indexing holds the file;
+  // retry a few times, then log and keep the in-memory value rather than crash.
   private save(): void {
     const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
-    fs.renameSync(tmp, this.file);
+    for (let attempt = 1; ; attempt++) {
+      try {
+        fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+        fs.renameSync(tmp, this.file);
+        return;
+      } catch (err) {
+        if (attempt >= 5) {
+          console.warn(`[settings] save failed: ${(err as Error).message}`);
+          return;
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 * attempt);
+      }
+    }
   }
 
   private plugin(id: string): PluginState {

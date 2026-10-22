@@ -32,6 +32,10 @@ export function openSettingsWindow(): void {
   });
 }
 
+export function closeSettingsWindow(): void {
+  win?.close();
+}
+
 // Registered once at startup. Only the settings window may call these.
 export function registerSettingsIpc(registry: PluginRegistry, store: SettingsStore, onChange: () => void): void {
   const fromSettings = (event: IpcMainInvokeEvent) => {
