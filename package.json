@@ -3,6 +3,12 @@
   "version": "0.0.1",
   "private": true,
   "description": "Phase 0 spike: a dedicated desktop YouTube app",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "author": "Michael Brian Du Preez (https://github.com/CodeManMike)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CodeManMike/the-tube-desktop.git"
+  },
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc",
