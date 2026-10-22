@@ -3,9 +3,21 @@ import { randomUUID } from 'crypto';
 export type QueueItem = { uid: string; videoId: string; title: string; channel: string; thumbnail: string; durationSec?: number };
 export type NewItem = Omit<QueueItem, 'uid'>;
 
+// Where shuffle refills come from: one or more creators' uploads, or a topic search.
+export type ShuffleSource =
+  | { kind: 'creators'; creators: { channelId: string; name: string }[] }
+  | { kind: 'topic'; query: string };
+
 export type ReturnPoint =
   | { kind: 'video'; videoId: string; timeSec: number }
-  | { kind: 'queue'; items: QueueItem[]; current: number | null; sourceListId: string | null; resumeTimeSec: number };
+  | {
+      kind: 'queue';
+      items: QueueItem[];
+      current: number | null;
+      sourceListId: string | null;
+      shuffle: ShuffleSource | null;
+      resumeTimeSec: number;
+    };
 
 export type QueueState = {
   items: QueueItem[];
@@ -15,6 +27,9 @@ export type QueueState = {
   detourVideoId: string | null;
   // The playlist/Mix the queue came from, so reloading that playlist doesn't replace it again.
   sourceListId: string | null;
+  shuffle: ShuffleSource | null;
+  // The shuffle source has nothing unwatched left; refills stop until the source changes.
+  shuffleExhausted: boolean;
 };
 
 export type Command = { navigate: { videoId: string; timeSec: number } } | null;
@@ -24,7 +39,15 @@ export type Playing = { videoId: string; timeSec: number; title?: string; channe
 
 export const MAX_RETURN_POINTS = 10;
 
-const emptyState = (): QueueState => ({ items: [], current: null, returnStack: [], detourVideoId: null, sourceListId: null });
+const emptyState = (): QueueState => ({
+  items: [],
+  current: null,
+  returnStack: [],
+  detourVideoId: null,
+  sourceListId: null,
+  shuffle: null,
+  shuffleExhausted: false,
+});
 const navigate = (videoId: string, timeSec = 0): Command => ({ navigate: { videoId, timeSec } });
 
 // The app-owned queue as a pure state machine. Items are tracked by uid, never by
@@ -177,9 +200,13 @@ export class QueueModel {
         items: this.s.items,
         current: this.s.current,
         sourceListId: this.s.sourceListId,
+        shuffle: this.s.shuffle,
         resumeTimeSec,
       });
     }
+    // A playlist replaces the queue, and with it any shuffle source.
+    this.s.shuffle = null;
+    this.s.shuffleExhausted = false;
     this.s.items = items.map((i) => this.withUid(i));
     const start = this.s.items.findIndex((i) => i.videoId === startVideoId);
     this.s.current = this.s.items.length === 0 ? null : Math.max(0, start);
@@ -194,6 +221,8 @@ export class QueueModel {
       this.s.items = point.items;
       this.s.current = point.current;
       this.s.sourceListId = point.sourceListId;
+      this.s.shuffle = point.shuffle ?? null;
+      this.s.shuffleExhausted = false;
       this.s.detourVideoId = null;
       const id = this.currentVideoId();
       return id ? navigate(id, point.resumeTimeSec) : null;
@@ -202,6 +231,23 @@ export class QueueModel {
     const stillDetour = point.videoId !== this.currentVideoId() && this.s.returnStack.length > 0;
     this.s.detourVideoId = stillDetour ? point.videoId : null;
     return navigate(point.videoId, point.timeSec);
+  }
+
+  setShuffle(source: ShuffleSource | null): void {
+    this.s.shuffle = source;
+    this.s.shuffleExhausted = false;
+  }
+
+  markShuffleExhausted(): void {
+    this.s.shuffleExhausted = true;
+  }
+
+  remainingAfterCurrent(): number {
+    return this.s.current === null ? this.s.items.length : this.s.items.length - this.s.current - 1;
+  }
+
+  appendItems(items: NewItem[]): void {
+    for (const item of items) this.s.items.push(this.withUid(item));
   }
 
   nextVideoId(): string | null {

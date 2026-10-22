@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { writeFileAtomic } from '../atomicFile';
-import { MAX_RETURN_POINTS, QueueItem, QueueState, ReturnPoint } from './model';
+import { MAX_RETURN_POINTS, QueueItem, QueueState, ReturnPoint, ShuffleSource } from './model';
 import { isYouTubeImage } from './validate';
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -8,7 +8,30 @@ const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 const isObject = (v: unknown): v is Record<string, any> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isVideoId = (v: unknown): v is string => typeof v === 'string' && VIDEO_ID.test(v);
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-const empty = (): QueueState => ({ items: [], current: null, returnStack: [], detourVideoId: null, sourceListId: null });
+const empty = (): QueueState => ({
+  items: [],
+  current: null,
+  returnStack: [],
+  detourVideoId: null,
+  sourceListId: null,
+  shuffle: null,
+  shuffleExhausted: false,
+});
+
+const CHANNEL_ID = /^UC[\w-]{22}$/;
+
+function shuffleSource(v: unknown): ShuffleSource | null {
+  if (!isObject(v)) return null;
+  if (v.kind === 'topic' && typeof v.query === 'string' && v.query.trim() && v.query.length <= 200) return { kind: 'topic', query: v.query };
+  if (v.kind === 'creators' && Array.isArray(v.creators) && v.creators.length > 0 && v.creators.length <= 20) {
+    const creators = v.creators.filter(
+      (c: unknown): c is { channelId: string; name: string } =>
+        isObject(c) && typeof c.channelId === 'string' && CHANNEL_ID.test(c.channelId) && typeof c.name === 'string' && c.name.length <= 100,
+    );
+    return creators.length === v.creators.length ? { kind: 'creators', creators: creators.map((c) => ({ channelId: c.channelId, name: c.name })) } : null;
+  }
+  return null;
+}
 
 function item(v: unknown): QueueItem | null {
   if (!isObject(v) || typeof v.uid !== 'string' || !v.uid || !isVideoId(v.videoId)) return null;
@@ -34,7 +57,14 @@ function returnPoint(v: unknown): ReturnPoint | null {
   if (v.kind === 'video' && isVideoId(v.videoId) && finite(v.timeSec)) return { kind: 'video', videoId: v.videoId, timeSec: v.timeSec };
   if (v.kind === 'queue' && finite(v.resumeTimeSec)) {
     const list = items(v.items);
-    return { kind: 'queue', items: list, current: current(v.current, list), sourceListId: listId(v.sourceListId), resumeTimeSec: v.resumeTimeSec };
+    return {
+      kind: 'queue',
+      items: list,
+      current: current(v.current, list),
+      sourceListId: listId(v.sourceListId),
+      shuffle: shuffleSource(v.shuffle),
+      resumeTimeSec: v.resumeTimeSec,
+    };
   }
   return null;
 }
@@ -50,6 +80,8 @@ function sanitise(raw: unknown): QueueState {
     returnStack: stack.slice(-MAX_RETURN_POINTS),
     detourVideoId: isVideoId(raw.detourVideoId) ? raw.detourVideoId : null,
     sourceListId: listId(raw.sourceListId),
+    shuffle: shuffleSource(raw.shuffle),
+    shuffleExhausted: raw.shuffleExhausted === true,
   };
 }
 
