@@ -181,6 +181,12 @@ async function probe(win: BrowserWindow): Promise<void> {
   await wc.executeJavaScript(`document.querySelector('ytd-topbar-logo-renderer a').click()`);
   await wait(5000);
   await count('back home (SPA)');
+  await wc.loadURL('https://www.youtube.com/results?search_query=minecraft').catch(() => {});
+  await wait(6000);
+  console.log('[probe] search', JSON.stringify(await wc.executeJavaScript(`({
+    videos: document.querySelectorAll('ytd-video-renderer').length,
+    shorts: document.querySelectorAll('ytd-reel-shelf-renderer, ytm-shorts-lockup-view-model, grid-shelf-view-model').length,
+  })`)));
   wc.openDevTools({ mode: 'detach' });
   await wait(3000);
   console.log('[probe] devtools opened:', wc.isDevToolsOpened(), 'debugger attached:', wc.debugger.isAttached());

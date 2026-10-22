@@ -18,14 +18,16 @@ function applyRules(json: string, rules: Rule[]): { json: string; ms: number } {
   return { json: JSON.stringify(data), ms };
 }
 
-function rewriteDocument(html: string, rules: Rule[]): { body: string; ms: number } {
+export function rewriteDocument(html: string, rules: Rule[]): { body: string; ms: number } {
   const start = html.indexOf(INITIAL_DATA);
   if (start < 0) return { body: html, ms: 0 };
   const jsonStart = start + INITIAL_DATA.length;
   const jsonEnd = html.indexOf(';</script>', jsonStart);
   if (jsonEnd < 0) return { body: html, ms: 0 };
   const { json, ms } = applyRules(html.slice(jsonStart, jsonEnd), rules);
-  return { body: html.slice(0, jsonStart) + json + html.slice(jsonEnd), ms };
+  // JSON.stringify un-escapes YouTube's \u003c; restore it so a title can't end the <script>.
+  const safe = json.replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  return { body: html.slice(0, jsonStart) + safe + html.slice(jsonEnd), ms };
 }
 
 // Candidate 1: rewrite responses in the main process via the Chrome DevTools Protocol.

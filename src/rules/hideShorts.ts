@@ -4,24 +4,25 @@ export const hideShorts: Rule = {
   name: 'hideShorts',
   // Helpers live inside transform so its toString() is runnable on its own.
   transform(data: any): any {
-    const MARKERS = ['reelShelfRenderer', 'shortsLockupViewModel', 'reelItemRenderer'];
-
-    function isShorts(node: any, depth: number): boolean {
-      if (!node || typeof node !== 'object' || depth > 4) return false;
-      if (Array.isArray(node)) return node.some((n) => isShorts(n, depth + 1));
-      for (const key of Object.keys(node)) {
-        if (MARKERS.includes(key)) return true;
-        if (key === 'richShelfRenderer' && node[key] && node[key].isShorts) return true;
-        if (isShorts(node[key], depth + 1)) return true;
-      }
-      return false;
+    // Only an element that *is* a Shorts item or shelf is removed. Containers that
+    // merely hold one (search sections, the watch sidebar) are kept and recursed into.
+    function isShortsItem(el: any): boolean {
+      if (!el || typeof el !== 'object' || Array.isArray(el)) return false;
+      if (el.reelShelfRenderer || el.reelItemRenderer || el.shortsLockupViewModel) return true;
+      const item = el.richItemRenderer && el.richItemRenderer.content;
+      if (item && (item.shortsLockupViewModel || item.reelItemRenderer)) return true;
+      const section = el.richSectionRenderer && el.richSectionRenderer.content;
+      if (section && section.reelShelfRenderer) return true;
+      const shelf = section && section.richShelfRenderer;
+      if (shelf && shelf.isShorts) return true;
+      return !!(shelf && Array.isArray(shelf.contents) && shelf.contents.length > 0 && shelf.contents.every(isShortsItem));
     }
 
     function walk(node: any): void {
       if (!node || typeof node !== 'object') return;
       if (Array.isArray(node)) {
         for (let i = node.length - 1; i >= 0; i--) {
-          if (isShorts(node[i], 0)) node.splice(i, 1);
+          if (isShortsItem(node[i])) node.splice(i, 1);
           else walk(node[i]);
         }
         return;

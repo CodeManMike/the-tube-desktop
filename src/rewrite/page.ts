@@ -10,7 +10,9 @@ function asExpression(fn: Function): string {
 }
 
 // Runs in the page's main world before any YouTube script.
-function pageHooks(transforms: [string, (data: any) => any][]): void {
+export function pageHooks(transforms: [string, (data: any) => any][]): void {
+  // The script runs in every document of the window, including Google sign-in. Leave those alone.
+  if (location.hostname !== 'www.youtube.com') return;
   const isTarget = (url: unknown) => typeof url === 'string' && url.includes('/youtubei/v1/browse');
   const pathOf = (url: string) => new URL(url, location.href).pathname;
 
@@ -65,14 +67,15 @@ function pageHooks(transforms: [string, (data: any) => any][]): void {
   const rewritten = (xhr: any): string | undefined => {
     if (xhr.readyState !== 4 || !isTarget(xhr.__tubeUrl)) return undefined;
     if (xhr.__tubeText === undefined) {
-      const raw = textDesc.get!.call(xhr);
       try {
-        xhr.__tubeText = JSON.stringify(apply(JSON.parse(raw), pathOf(xhr.__tubeUrl)));
+        // The native responseText getter throws for responseType 'json'; read the object instead.
+        const parsed = xhr.responseType === 'json' ? respDesc.get!.call(xhr) : JSON.parse(textDesc.get!.call(xhr));
+        xhr.__tubeText = JSON.stringify(apply(parsed, pathOf(xhr.__tubeUrl)));
       } catch {
-        xhr.__tubeText = raw;
+        xhr.__tubeText = null;
       }
     }
-    return xhr.__tubeText;
+    return xhr.__tubeText ?? undefined;
   };
   Object.defineProperty(proto, 'responseText', {
     get(this: any) {
