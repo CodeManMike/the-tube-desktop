@@ -6,6 +6,7 @@ import { attachPageBundle, PageBundleHandle } from './pageBundle';
 import { PluginRegistry } from './pluginRegistry';
 import { isInAppUrl, permissionAllowed } from './policy';
 import { SettingsStore } from './settingsStore';
+import { openSettingsWindow, registerSettingsIpc } from './settingsWindow';
 import { restoreBounds } from './windowState';
 import { ALL_PLUGINS } from '../plugins';
 
@@ -75,6 +76,7 @@ function buildMenu(): void {
     {
       label: 'TTD',
       submenu: [
+        { label: 'Settings', accelerator: 'Ctrl+,', click: () => openSettingsWindow() },
         {
           label: 'DevTools',
           accelerator: 'Ctrl+Shift+I',
@@ -110,6 +112,17 @@ app.whenReady().then(async () => {
   });
 
   bundle = await attachPageBundle(mainWindow.webContents, () => registry.pageEntries());
+
+  // A settings change rebuilds the page bundle and reloads YouTube; debounced so a
+  // burst of edits causes one reload.
+  let reloadTimer: NodeJS.Timeout | undefined;
+  registerSettingsIpc(registry, store, () => {
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(async () => {
+      await bundle?.refresh();
+      mainWindow?.webContents.reload();
+    }, 400);
+  });
   registry.runMainHooks({ mainWindow, store, log: (msg) => console.log(msg) });
 
   // YouTube redirects the first load (?themeRefresh=1), which aborts the original navigation.
