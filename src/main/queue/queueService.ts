@@ -106,10 +106,10 @@ export class QueueService {
   }
 
   // Top the queue up from the shuffle source when it runs low (a no-op otherwise).
-  private refill(): void {
+  private refill(force = false): void {
     const before = JSON.stringify(this.model.state());
     this.runner
-      .refill(this.model, this.settings().batchSize)
+      .refill(this.model, this.settings().batchSize, { force })
       .then(() => {
         if (JSON.stringify(this.model.state()) !== before) this.commit(null);
       })
@@ -129,6 +129,9 @@ export class QueueService {
       next = { kind: 'creators', creators };
     }
     this.model.setShuffle(next);
+    // Shuffling from an empty queue while watching: that video becomes the current item.
+    const playing = this.watching();
+    if (next && playing) this.model.adoptPlaying(playing);
   }
 
   // YouTube sends only a ~25-item window of a playlist; fetch the rest (up to 500).
@@ -158,7 +161,7 @@ export class QueueService {
       case 'shuffle':
         this.applyShuffle(ev);
         this.commit(null);
-        this.refill();
+        this.refill(true); // an explicit pick adds a batch right away
         return;
       case 'navigated':
         this.lastFrom = ev.from;

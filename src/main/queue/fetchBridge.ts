@@ -18,6 +18,7 @@ export class FetchBridge {
 
   request(endpoint: 'browse' | 'search', body: object): Promise<{ items: Candidate[]; continuation: string | null }> {
     const requestId = `r${++this.next}`;
+    console.log(`[shuffle] page fetch ${requestId} ${endpoint}`);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);

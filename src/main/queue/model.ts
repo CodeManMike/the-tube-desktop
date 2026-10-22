@@ -82,20 +82,24 @@ export class QueueModel {
     while (this.s.returnStack.length > MAX_RETURN_POINTS) this.s.returnStack.shift();
   }
 
+  // Starting a queue while watching something: that video becomes item 0, the current one.
+  adoptPlaying(playing: Playing): void {
+    if (this.s.items.length > 0) return;
+    this.s.items.push(
+      this.withUid({
+        videoId: playing.videoId,
+        title: playing.title ?? playing.videoId,
+        channel: playing.channel ?? '',
+        thumbnail: `https://i.ytimg.com/vi/${playing.videoId}/mqdefault.jpg`,
+      }),
+    );
+    this.s.current = 0;
+    // The video being watched is now the queue's own, so it is no longer a side trip.
+    if (this.s.detourVideoId === playing.videoId) this.s.detourVideoId = null;
+  }
+
   add(item: NewItem, playing?: Playing): void {
-    if (this.s.items.length === 0 && playing) {
-      this.s.items.push(
-        this.withUid({
-          videoId: playing.videoId,
-          title: playing.title ?? playing.videoId,
-          channel: playing.channel ?? '',
-          thumbnail: `https://i.ytimg.com/vi/${playing.videoId}/mqdefault.jpg`,
-        }),
-      );
-      this.s.current = 0;
-      // The video being watched is now the queue's own, so it is no longer a side trip.
-      if (this.s.detourVideoId === playing.videoId) this.s.detourVideoId = null;
-    }
+    if (playing) this.adoptPlaying(playing);
     this.s.items.push(this.withUid(item));
   }
 

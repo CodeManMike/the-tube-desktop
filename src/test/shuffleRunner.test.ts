@@ -117,3 +117,13 @@ test('a failed fetch leaves the queue as it was and does not mark the source exh
   assert.deepEqual(ids(m), []);
   assert.equal(m.state().shuffleExhausted, false);
 });
+
+
+test('a forced refill adds a batch even when plenty remain', async () => {
+  const m = shuffling({ kind: 'topic', query: 'lofi' });
+  m.appendItems([cand(1), cand(2), cand(3), cand(4)].map(plain));
+  m.jump(m.state().items[0].uid);
+  const { request } = fakeRequest({ lofi: { items: [cand(5), cand(6)], continuation: null } });
+  assert.equal(await new ShuffleRunner(request, () => false, () => 0).refill(m, 10, { force: true }), true);
+  assert.equal(ids(m).length, 6);
+});

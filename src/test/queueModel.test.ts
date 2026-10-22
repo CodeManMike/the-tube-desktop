@@ -270,3 +270,14 @@ test('extendPlaylist is a no-op after the queue moved on', () => {
   assert.equal(m.extendPlaylist('PLx', [v(A), v(B), v(C)]), false);
   assert.deepEqual(ids(m), [D]);
 });
+
+
+test('adoptPlaying makes the playing video current when the queue is empty', () => {
+  const m = model();
+  m.adoptPlaying({ videoId: A, timeSec: 12, title: 'Now' });
+  assert.deepEqual(ids(m), [A]);
+  assert.equal(currentId(m), A);
+  assert.equal(m.state().items[0].title, 'Now');
+  m.adoptPlaying({ videoId: B, timeSec: 0 });
+  assert.deepEqual(ids(m), [A]); // a non-empty queue is left alone
+});

@@ -32,10 +32,11 @@ export class ShuffleRunner {
     private readonly random: () => number = Math.random,
   ) {}
 
-  async refill(model: QueueModel, batchSize: number): Promise<boolean> {
+  // `force` adds a batch now (the user just picked a source); otherwise only when running low.
+  async refill(model: QueueModel, batchSize: number, opts: { force?: boolean } = {}): Promise<boolean> {
     const start = model.state();
     if (!start.shuffle || start.shuffleExhausted || this.busy) return false;
-    if (model.remainingAfterCurrent() >= REFILL_WHEN_REMAINING_BELOW) return false;
+    if (!opts.force && model.remainingAfterCurrent() >= REFILL_WHEN_REMAINING_BELOW) return false;
     this.busy = true;
     try {
       const key = sourceKey(start.shuffle);
