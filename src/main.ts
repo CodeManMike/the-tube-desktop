@@ -58,6 +58,16 @@ app.whenReady().then(async () => {
   buildMenu();
   useHonestUaForSignIn();
   mainWindow = createMainWindow();
+  // Spike diagnostic: is the saved session present, and does YouTube accept it?
+  mainWindow.webContents.on('did-finish-load', async () => {
+    const wc = mainWindow!.webContents;
+    const sid = await wc.session.cookies.get({ domain: '.youtube.com', name: 'SID' });
+    const loggedIn = await wc
+      .executeJavaScript('window.ytcfg ? ytcfg.get("LOGGED_IN") : "no ytcfg"')
+      .catch(() => 'n/a');
+    console.log('[session]', wc.getURL(), 'SID cookies:', sid.length, 'LOGGED_IN:', loggedIn);
+  });
+
   // YouTube redirects the first load (?themeRefresh=1), which aborts the original navigation.
   mainWindow.loadURL('https://www.youtube.com').catch((err) => {
     if (err.code !== 'ERR_ABORTED') console.error('[load]', err);

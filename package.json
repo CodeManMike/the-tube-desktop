@@ -6,7 +6,8 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc",
-    "start": "tsc && electron dist/main.js"
+    "start": "tsc && electron dist/main.js",
+    "sign": "python -m castlabs_evs.vmp sign-pkg node_modules/electron/dist"
   },
   "devDependencies": {
     "electron": "https://github.com/castlabs/electron-releases#v44.5.1+wvcus",
