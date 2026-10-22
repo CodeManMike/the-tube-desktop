@@ -2,7 +2,8 @@ import { app, BrowserWindow, Menu, components, session } from 'electron';
 import path from 'path';
 import { PARTITION } from './config';
 import { migrateLegacyProfile } from './migrate';
-import { attachPageRewrite } from '../rewrite/page';
+import { attachPageBundle } from './pageBundle';
+import { asExpression } from './pluginRegistry';
 import { hideShorts } from '../rules/hideShorts';
 
 const ICON = path.join(app.getAppPath(), 'assets', 'icons', 'favicon.ico');
@@ -81,9 +82,11 @@ app.whenReady().then(async () => {
     console.log('[session]', wc.getURL(), 'SID cookies:', sid.length, 'LOGGED_IN:', loggedIn);
   });
 
-  // The Page domain needs a live renderer; a fresh window has none until something loads.
-  await mainWindow.loadURL('about:blank');
-  await attachPageRewrite(mainWindow.webContents, [hideShorts]);
+  // Temporary until the plugin registry is wired in (Task 6).
+  const shorts = asExpression(hideShorts.transform);
+  await attachPageBundle(mainWindow.webContents, () => [
+    { id: 'hideShorts', settings: {}, transforms: { browse: shorts, next: shorts, search: shorts, initialData: shorts } },
+  ]);
 
   // YouTube redirects the first load (?themeRefresh=1), which aborts the original navigation.
   mainWindow.loadURL('https://www.youtube.com').catch((err) => {

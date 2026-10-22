@@ -1,6 +1,4 @@
-import { Rule } from '../rewrite/types';
-
-export const hideShorts: Rule = {
+export const hideShorts = {
   name: 'hideShorts',
   // Helpers live inside transform so its toString() is runnable on its own.
   transform(data: any): any {
