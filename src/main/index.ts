@@ -4,7 +4,7 @@ import { PARTITION } from './config';
 import { migrateLegacyProfile } from './migrate';
 import { attachPageBundle } from './pageBundle';
 import { asExpression } from './pluginRegistry';
-import { hideShorts } from '../rules/hideShorts';
+import { hideShorts } from '../plugins/hideShorts';
 
 const ICON = path.join(app.getAppPath(), 'assets', 'icons', 'favicon.ico');
 
@@ -83,9 +83,9 @@ app.whenReady().then(async () => {
   });
 
   // Temporary until the plugin registry is wired in (Task 6).
-  const shorts = asExpression(hideShorts.transform);
+  const shorts = asExpression(hideShorts.transforms!.browse!);
   await attachPageBundle(mainWindow.webContents, () => [
-    { id: 'hideShorts', settings: {}, transforms: { browse: shorts, next: shorts, search: shorts, initialData: shorts } },
+    { id: 'hideShorts', settings: {}, transforms: { browse: shorts, next: shorts, search: shorts, initialData: shorts }, css: hideShorts.css },
   ]);
 
   // YouTube redirects the first load (?themeRefresh=1), which aborts the original navigation.
