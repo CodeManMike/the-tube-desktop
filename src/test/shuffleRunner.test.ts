@@ -127,3 +127,15 @@ test('a forced refill adds a batch even when plenty remain', async () => {
   assert.equal(await new ShuffleRunner(request, () => false, () => 0).refill(m, 10, { force: true }), true);
   assert.equal(ids(m).length, 6);
 });
+
+
+test('every creator\'s first page is fetched before picking, even when one alone is enough', async () => {
+  const m = shuffling({ kind: 'creators', creators: [RICK, BEN] });
+  const many = (from: number) => Array.from({ length: 20 }, (_, i) => cand(from + i));
+  const { request, calls } = fakeRequest({
+    ['VLUU' + RICK.channelId.slice(2)]: { items: many(100), continuation: 'rick2' },
+    ['VLUU' + BEN.channelId.slice(2)]: { items: many(200), continuation: 'ben2' },
+  });
+  await new ShuffleRunner(request, () => false, () => 0.5).refill(m, 10);
+  assert.deepEqual(calls, ['VLUU' + RICK.channelId.slice(2), 'VLUU' + BEN.channelId.slice(2)]);
+});

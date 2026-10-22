@@ -3,7 +3,7 @@ import { Candidate, pickBatch } from './shuffle';
 
 type Endpoint = 'browse' | 'search';
 type Request = (endpoint: Endpoint, body: object) => Promise<{ items: Candidate[]; continuation: string | null }>;
-type PendingRequest = { endpoint: Endpoint; body: object; creatorName?: string };
+type PendingRequest = { endpoint: Endpoint; body: object; creatorName?: string; firstPage?: boolean };
 type Pool = { items: Candidate[]; pending: PendingRequest[] };
 
 export const REFILL_WHEN_REMAINING_BELOW = 3;
@@ -17,7 +17,7 @@ const sourceKey = (s: ShuffleSource) =>
 function firstRequests(s: ShuffleSource): PendingRequest[] {
   if (s.kind === 'topic') return [{ endpoint: 'search', body: { query: s.query, params: SEARCH_VIDEOS_ONLY } }];
   // Each creator's uploads playlist is "UU" + the channel id after "UC".
-  return s.creators.map((c) => ({ endpoint: 'browse', body: { browseId: 'VLUU' + c.channelId.slice(2) }, creatorName: c.name }));
+  return s.creators.map((c) => ({ endpoint: 'browse', body: { browseId: 'VLUU' + c.channelId.slice(2) }, creatorName: c.name, firstPage: true }));
 }
 
 // Keeps a shuffle source's candidate pool and tops the queue up a batch at a time,
@@ -51,7 +51,10 @@ export class ShuffleRunner {
         return pool!.items.filter((c) => !q.has(c.videoId) && !this.isWatched(c)).length;
       };
 
-      for (let pages = 0; eligible() < batchSize && pool.pending.length > 0 && pages < MAX_PAGES_PER_REFILL; pages++) {
+      // Every creator's first page is fetched before picking, so a combined source really
+      // mixes them (one creator's 100-video page would otherwise satisfy the batch alone).
+      const needMore = () => eligible() < batchSize || pool!.pending.some((r) => r.firstPage);
+      for (let pages = 0; needMore() && pool.pending.length > 0 && pages < MAX_PAGES_PER_REFILL; pages++) {
         const next = pool.pending.shift()!;
         let page;
         try {
