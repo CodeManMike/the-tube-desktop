@@ -43,8 +43,19 @@ export function parseVideoPage(json: any): { items: ParsedVideo[]; continuation:
     const id = l.contentId;
     if (typeof id !== 'string') return;
     const meta = l.metadata?.lockupMetadataViewModel;
-    const part = meta?.metadata?.contentMetadataViewModel?.metadataRows?.[0]?.metadataParts?.[0]?.text;
-    const channelId = part?.commandRuns?.[0]?.onTap?.innertubeCommand?.browseEndpoint?.browseId;
+    // The channel is the first metadata part that links to a channel. Uploads lists have
+    // no such part (their first part is the view count), so the channel stays empty.
+    let part: any = null;
+    let channelId: unknown;
+    for (const row of meta?.metadata?.contentMetadataViewModel?.metadataRows ?? []) {
+      for (const p of row?.metadataParts ?? []) {
+        const id = p?.text?.commandRuns?.[0]?.onTap?.innertubeCommand?.browseEndpoint?.browseId;
+        if (!part && typeof id === 'string') {
+          part = p.text;
+          channelId = id;
+        }
+      }
+    }
     let length: string | undefined;
     for (const o of l.contentImage?.thumbnailViewModel?.overlays ?? []) {
       for (const b of o?.thumbnailBottomOverlayViewModel?.badges ?? []) length ??= b?.thumbnailBadgeViewModel?.text;

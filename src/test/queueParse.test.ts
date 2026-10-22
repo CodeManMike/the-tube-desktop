@@ -115,3 +115,12 @@ test('parseVideoPage is self-contained', () => {
   const standalone = vm.runInNewContext(asExpression(parseVideoPage), sandbox);
   assert.equal(standalone({ contents: [lockup(ID('k'), { duration: '1:00' })] }).items.length, 1);
 });
+
+
+test('a lockup whose first metadata part is not a channel link (e.g. view count) has no channel', () => {
+  const item = lockup(ID('m'), { duration: '1:00', channel: '1M views' }) as any;
+  delete item.lockupViewModel.metadata.lockupMetadataViewModel.metadata.contentMetadataViewModel.metadataRows[0].metadataParts[0].text.commandRuns;
+  const { items } = parseVideoPage({ contents: [item] });
+  assert.equal(items[0].channel, '');
+  assert.equal('channelId' in items[0], false);
+});
