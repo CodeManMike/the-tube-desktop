@@ -12,8 +12,9 @@ $cpu = @(); $mem = @()
 
 # Exact name only: "msedge*" would also match msedgewebview2 (Widgets, Teams, Outlook...).
 $exact = "^$([regex]::Escape($ProcessName.ToLower()))(#\d+)?$"
-Get-Counter -Counter $paths -SampleInterval 1 -MaxSamples $Seconds | ForEach-Object {
-  $samples = $_.CounterSamples | Where-Object InstanceName -match $exact
+Get-Counter -Counter $paths -SampleInterval 1 -MaxSamples $Seconds -ErrorAction SilentlyContinue | ForEach-Object {
+  # Processes starting/exiting mid-sample yield invalid entries (Status != 0); skip them.
+  $samples = $_.CounterSamples | Where-Object { $_.InstanceName -match $exact -and $_.Status -eq 0 }
   $cpu += ($samples | Where-Object Path -like '*% processor time' | Measure-Object CookedValue -Sum).Sum / $cores
   $mem += ($samples | Where-Object Path -like '*private bytes' | Measure-Object CookedValue -Sum).Sum / 1MB
 }
