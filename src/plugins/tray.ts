@@ -14,7 +14,9 @@ export const tray: Plugin = {
   main: (ctx) => {
     const icon = new Tray(path.join(app.getAppPath(), 'assets', 'icons', 'favicon.ico'));
     const menu = () =>
-      Menu.buildFromTemplate(trayMenuTemplate({ visible: !!ctx.mainWindow?.isVisible(), pipOpen: ctx.controls.isPipOpen() }, ctx.controls));
+      Menu.buildFromTemplate(
+        trayMenuTemplate({ visible: !!ctx.mainWindow?.isVisible() && !ctx.mainWindow.isMinimized(), pipOpen: ctx.controls.isPipOpen() }, ctx.controls),
+      );
     icon.setToolTip(trayTooltip(null));
     icon.on('click', () => ctx.controls.showHide());
     icon.on('right-click', () => icon.popUpContextMenu(menu()));
@@ -28,6 +30,8 @@ export const tray: Plugin = {
       clearInterval(tip);
       ctx.setHideOnClose(false);
       icon.destroy();
+      // Without its tray icon, a window hidden in the tray would be unreachable: bring it back.
+      if (ctx.mainWindow && !ctx.mainWindow.isDestroyed() && !ctx.mainWindow.isVisible()) ctx.mainWindow.show();
     };
   },
 };

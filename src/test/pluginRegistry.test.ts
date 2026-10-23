@@ -142,3 +142,13 @@ test('a throwing hook or disposer is contained', () => {
   assert.ok(logs.some((l) => l.includes('bad') && l.includes('boom')));
   assert.ok(logs.some((l) => l.includes('badDispose') && l.includes('dispose boom')));
 });
+
+test('restartMainHooks for one plugin leaves the others running', () => {
+  const events: string[] = [];
+  const hook = (id: string) => plugin(id, { main: () => { events.push('run:' + id); return () => events.push('dispose:' + id); } });
+  const reg = new PluginRegistry([hook('tray'), hook('hotkeys')], store());
+  reg.restartMainHooks(mainCtx());
+  events.length = 0;
+  reg.restartMainHooks(mainCtx(), 'hotkeys');
+  assert.deepEqual(events, ['dispose:hotkeys', 'run:hotkeys']);
+});

@@ -15,7 +15,7 @@ import { QueueService } from './queue/queueService';
 import { QueueStore } from './queue/queueStore';
 import { PipWindow } from './pip/pipWindow';
 import { SponsorBlockClient } from './skip/sponsorBlock';
-import { createPlayerControls } from './desktop/playerControls';
+import { createPlayerControls, revealWindow } from './desktop/playerControls';
 import { SignInWatcher } from './account/signInWatcher';
 import { RydClient } from './ryd';
 
@@ -51,9 +51,8 @@ if (!isPrimary) {
 } else {
   console.log('[migrate]', migrateLegacyProfile(path.join(app.getPath('appData'), 'Electron'), app.getPath('userData')));
   app.on('second-instance', () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    // Opening TTD again brings it back, even when it's hidden in the tray.
+    if (mainWindow) revealWindow(mainWindow);
   });
 }
 
@@ -357,8 +356,9 @@ if (isPrimary) app.whenReady().then(async () => {
     shortcuts: { register: (a: string, fn: () => void) => globalShortcut.register(a, fn), unregister: (a: string) => globalShortcut.unregister(a) },
     setHideOnClose: (on: boolean) => (hideOnClose = on),
   };
-  registerSettingsIpc(registry, store, () => {
-    registry.restartMainHooks(hookContext);
+  registerSettingsIpc(registry, store, (pluginId) => {
+    // Only the changed plugin's main hook restarts (the tray icon isn't recreated for, say, a theme change).
+    registry.restartMainHooks(hookContext, pluginId);
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(async () => {
       try {

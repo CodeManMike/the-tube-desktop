@@ -190,7 +190,12 @@ export class PipWindow {
           if (isPlaying(now)) resumeAt = now;
         } finally {
           if (!win.isDestroyed()) win.destroy();
-          if (this.handoff && resumeAt) this.queue.resumeInMain(resumeAt);
+          if (this.handoff && resumeAt) {
+            // Playback moves back to the main window; if it's hidden in the tray, show it rather
+            // than play on unseen.
+            if (!this.main.isDestroyed() && !this.main.isVisible()) this.main.show();
+            this.queue.resumeInMain(resumeAt);
+          }
           else this.queue.setPlayer(null);
           console.log(`[pip] closed${this.handoff && resumeAt ? `; main resumes ${resumeAt.videoId} at ${resumeAt.timeSec.toFixed(1)}s` : ''}`);
         }

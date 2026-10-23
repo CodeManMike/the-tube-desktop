@@ -70,16 +70,19 @@ export class PluginRegistry {
 
   // Stops every running main hook, then starts the enabled ones with their current settings.
   // Called at startup and after any settings change.
-  restartMainHooks(ctx: MainContext): void {
+  // `onlyId` restarts one plugin's hook (the one whose settings changed), leaving the rest.
+  restartMainHooks(ctx: MainContext, onlyId?: string): void {
     for (const [id, dispose] of this.disposers) {
+      if (onlyId && id !== onlyId) continue;
       try {
         dispose();
       } catch (err) {
         ctx.log(`[ttd] ${id} main hook cleanup failed: ${(err as Error).message}`);
       }
+      this.disposers.delete(id);
     }
-    this.disposers.clear();
     for (const p of this.plugins) {
+      if (onlyId && p.manifest.id !== onlyId) continue;
       if (!p.main || !this.enabled(p)) continue;
       try {
         const dispose = p.main({ ...ctx, settings: { ...this.store.values(p.manifest.id, p.manifest.settings), ...this.borrowed(p) } });

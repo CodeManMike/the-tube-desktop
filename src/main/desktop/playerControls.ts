@@ -7,6 +7,14 @@ const TOGGLE = `(() => {
   p.getPlayerState() === 1 ? p.pauseVideo() : p.playVideo();
 })()`;
 
+// Brings back a window that's minimised or hidden in the tray. On Windows, focus() alone
+// doesn't show a hidden window.
+export function revealWindow(win: Pick<BrowserWindow, 'isMinimized' | 'restore' | 'show' | 'focus'>): void {
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
 // The one place tray and hotkeys act through. Play/pause goes to whichever player is active
 // (PiP if open, else the main window); next/previous step the queue like PiP's buttons.
 export function createPlayerControls(deps: {
@@ -29,12 +37,9 @@ export function createPlayerControls(deps: {
     showHide: () => {
       const win = deps.mainWindow();
       if (!win) return;
-      if (win.isVisible() && win.isFocused()) win.hide();
-      else {
-        if (win.isMinimized()) win.restore();
-        win.show();
-        win.focus();
-      }
+      // Not "focused": clicking the tray takes focus from the window before this runs.
+      if (win.isVisible() && !win.isMinimized()) win.hide();
+      else revealWindow(win);
     },
     openSettings: () => deps.openSettings(),
     quit: () => deps.quit(),

@@ -37,7 +37,7 @@ export function closeSettingsWindow(): void {
 }
 
 // Registered once at startup. Only the settings window may call these.
-export function registerSettingsIpc(registry: PluginRegistry, store: SettingsStore, onChange: () => void): void {
+export function registerSettingsIpc(registry: PluginRegistry, store: SettingsStore, onChange: (pluginId: string) => void): void {
   const fromSettings = (event: IpcMainInvokeEvent) => {
     if (!win || event.sender !== win.webContents) throw new Error('settings IPC from unexpected sender');
   };
@@ -55,13 +55,13 @@ export function registerSettingsIpc(registry: PluginRegistry, store: SettingsSto
     fromSettings(event);
     pluginById(id);
     store.setEnabled(id, on === true);
-    onChange();
+    onChange(id);
   });
   ipcMain.handle('settings:setValue', (event, id: string, key: string, value: unknown) => {
     fromSettings(event);
     const def = pluginById(id).manifest.settings.find((d) => d.key === key);
     if (!def) throw new Error(`unknown setting: ${id}.${key}`);
     store.setValue(id, def, value);
-    onChange();
+    onChange(id);
   });
 }
