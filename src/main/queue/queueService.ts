@@ -5,12 +5,15 @@ import { Command, NewItem, Playing, QueueModel, ShuffleSource } from './model';
 import { QueueStore } from './queueStore';
 import { isWatched, shouldFetchRestOfPlaylist } from './shuffle';
 import { ShuffleRunner } from './shuffleRunner';
-import { PageEvent, sanitiseItem, validateEvent } from './validate';
+import { PageEvent, sanitiseItem, validateEvent, validatePipEvent } from './validate';
 
 export type QueueSettings = { batchSize: number; watchedPercent: number };
 
 const FULL_PLAYLIST_MAX = 500;
 const FULL_PLAYLIST_MAX_PAGES = 10;
+
+// Whatever is playing the queue when it isn't the main window (the PiP window).
+export type Player = { webContents: WebContents; navigate(cmd: NonNullable<Command>): void };
 
 export type QueuePayload = { state: ReturnType<QueueModel['state']>; nextVideoId: string | null; command: Command; seq: number };
 
@@ -24,6 +27,8 @@ export class QueueService {
   private autoplay: NewItem | null = null;
   private readonly bridge: FetchBridge;
   private readonly runner: ShuffleRunner;
+  private player: Player | null = null;
+  private onTakeover: (() => void) | null = null;
 
   constructor(
     private readonly model: QueueModel,
@@ -66,11 +71,34 @@ export class QueueService {
     return ok;
   }
 
+  // While a player is set, it plays the queue: commands go there, and main-window
+  // playback means you've taken over in the main window again (onTakeover).
+  setPlayer(player: Player | null, onTakeover?: () => void): void {
+    this.player = player;
+    this.onTakeover = player ? onTakeover ?? null : null;
+  }
+
+  // Events from the PiP window: only playback reports and next/previous.
+  handlePip(raw: unknown): void {
+    const ev = validatePipEvent(raw);
+    if (!ev) {
+      console.warn('[queue] ignored an invalid event from PiP');
+      return;
+    }
+    this.apply(ev);
+  }
+
+  // Back from PiP: the main window carries on with PiP's video at PiP's time.
+  resumeInMain(at: Playing): void {
+    this.setPlayer(null);
+    this.publish({ navigate: { videoId: at.videoId, timeSec: at.timeSec } });
+  }
+
   // What the main window is showing right now. The 5 s progress sample can be stale (a
   // different video, or one you already left), so the URL decides.
   private watching(): Playing | undefined {
     try {
-      const u = new URL(this.wc?.getURL() ?? '');
+      const u = new URL((this.player?.webContents ?? this.wc)?.getURL() ?? '');
       const id = u.searchParams.get('v');
       if (u.hostname !== 'www.youtube.com' || u.pathname !== '/watch' || !id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return undefined;
       return this.playing?.videoId === id ? this.playing : { videoId: id, timeSec: 0 };
@@ -153,7 +181,18 @@ export class QueueService {
     else if (items.length > 0) console.log(`[queue] dropped the full playlist ${listId}: the queue changed while it loaded`);
   }
 
+  // Events from the main window.
   handle(ev: PageEvent): void {
+    // One player at a time: playing in the main window closes PiP.
+    if (this.player && (ev.type === 'navigated' || ev.type === 'progress')) {
+      const takeover = this.onTakeover;
+      this.setPlayer(null);
+      takeover?.();
+    }
+    this.apply(ev);
+  }
+
+  private apply(ev: PageEvent): void {
     let command: Command = null;
     switch (ev.type) {
       case 'fetched':
@@ -222,6 +261,10 @@ export class QueueService {
   }
 
   private publish(command: Command): void {
+    if (command && this.player) {
+      this.player.navigate(command);
+      command = null;
+    }
     if (!this.wc || this.wc.isDestroyed()) return;
     const payload: QueuePayload = { state: this.model.state(), nextVideoId: this.model.nextVideoId(), command, seq: ++this.seq };
     this.wc.send('queue:state', payload);
