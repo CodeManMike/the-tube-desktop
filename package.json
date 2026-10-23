@@ -15,11 +15,42 @@
     "start": "tsc && electron .",
     "test": "tsc && node --test \"dist/test/*.test.js\"",
     "sign": "python -m castlabs_evs.vmp sign-pkg node_modules/electron/dist",
-    "postinstall": "node node_modules/electron/install.js"
+    "postinstall": "node node_modules/electron/install.js",
+    "dist": "tsc && electron-builder --win"
   },
   "devDependencies": {
     "electron": "https://github.com/castlabs/electron-releases#v44.5.1+wvcus",
+    "electron-builder": "26.15.3",
     "typescript": "^5.9.3"
   },
-  "productName": "The Tube Desktop"
+  "productName": "The Tube Desktop",
+  "build": {
+    "appId": "com.thetubedesktop.app",
+    "productName": "The Tube Desktop",
+    "electronDist": "node_modules/electron/dist",
+    "electronVersion": "44.5.1",
+    "asar": true,
+    "files": [
+      "dist/**",
+      "!dist/test/**",
+      "static/**",
+      "assets/**",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icons/favicon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "The Tube Desktop"
+    },
+    "afterSign": "scripts/vmp-sign.cjs"
+  }
 }
