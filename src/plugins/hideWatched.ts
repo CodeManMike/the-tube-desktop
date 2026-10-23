@@ -1,11 +1,19 @@
 import { Plugin } from '../shared/plugin';
 
 // Removes videos YouTube marks as watched (its progress bar, which includes phone and TV
-// viewing) on the pages the user picked. Transforms run in the page, so the page path says
-// which feed a response belongs to. Self-contained: serialised on its own.
-export function hideWatchedItems(data: any, settings: Record<string, unknown>): any {
-  const path = location.pathname;
-  const page = path === '/' ? 'home' : path === '/feed/subscriptions' ? 'subscriptions' : path === '/results' ? 'search' : path === '/watch' ? 'related' : null;
+// viewing) on the pages the user picked. Which page a response is for comes from the request
+// (endpoint, browseId): on in-page navigation YouTube fetches before the URL changes. Only
+// embedded data and continuations fall back to the URL. Self-contained: serialised on its own.
+export function hideWatchedItems(data: any, settings: Record<string, unknown>, ctx?: { endpoint: string; browseId?: string }): any {
+  const byPath = (path: string) =>
+    path === '/' ? 'home' : path === '/feed/subscriptions' ? 'subscriptions' : path === '/results' ? 'search' : path === '/watch' ? 'related' : null;
+  const byBrowseId = (id: string) => (id === 'FEwhat_to_watch' ? 'home' : id === 'FEsubscriptions' ? 'subscriptions' : null);
+  const endpoint = ctx?.endpoint;
+  const page =
+    endpoint === 'search' ? 'search'
+    : endpoint === 'next' ? 'related'
+    : endpoint === 'browse' && ctx?.browseId ? byBrowseId(ctx.browseId)
+    : byPath(location.pathname);
   if (!page || settings[page] !== true) return data;
   const threshold = Number(settings.watchedPercent ?? 80);
 
@@ -57,11 +65,16 @@ function hideWatchedScript(settings: Record<string, unknown>): void {
     if (!page || settings[page] !== true || !watched.size) return;
     const scope = page === 'related' ? document.querySelector('#secondary') : document;
     for (const el of scope?.querySelectorAll<HTMLElement>(ITEMS) ?? []) {
-      if (el.dataset.ttdWatched || el.closest('ytd-playlist-panel-renderer, .ttd-queue')) continue;
+      if (el.closest('ytd-playlist-panel-renderer, .ttd-queue')) continue;
       const href = el.querySelector('a[href*="watch?v="]')?.getAttribute('href') ?? '';
       const id = href.match(/[?&]v=([\w-]{11})/)?.[1];
-      if (id && watched.has(id)) {
-        el.dataset.ttdWatched = '1';
+      // YouTube reuses these elements for other videos: show one again when its video changed.
+      if (el.dataset.ttdWatched && el.dataset.ttdWatched !== id) {
+        delete el.dataset.ttdWatched;
+        el.style.display = '';
+      }
+      if (id && watched.has(id) && !el.dataset.ttdWatched) {
+        el.dataset.ttdWatched = id;
         el.style.display = 'none';
       }
     }

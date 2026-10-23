@@ -40,3 +40,19 @@ test('removal keeps continuation items', () => {
   const out = hideWatchedItems(home(lockup('a', 95), { continuationItemRenderer: { token: 't' } }), ON);
   assert.deepEqual(ids(out), ['continuationItemRenderer']);
 });
+
+test('a browse response for History is never filtered, even while the URL still shows Home', () => {
+  at('/');
+  assert.deepEqual(ids(hideWatchedItems(home(lockup('a', 95)), ON, { endpoint: 'browse', browseId: 'FEhistory' })), ['a']);
+});
+
+test('a browse response for Home is filtered even while the URL still shows a channel', () => {
+  at('/@someone');
+  assert.deepEqual(ids(hideWatchedItems(home(lockup('a', 95), lockup('b')), ON, { endpoint: 'browse', browseId: 'FEwhat_to_watch' })), ['b']);
+});
+
+test('search and next responses are classified by endpoint, not by the URL', () => {
+  at('/');
+  assert.deepEqual(ids(hideWatchedItems(home(lockup('a', 95)), { ...ON, home: false, search: true }, { endpoint: 'search' })), []);
+  assert.deepEqual(ids(hideWatchedItems(home(lockup('a', 95)), { ...ON, related: false }, { endpoint: 'next' })), ['a']);
+});

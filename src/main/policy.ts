@@ -66,7 +66,7 @@ export function routeUrl(url: string): Route {
     if (!/^UC[\w-]{22}$/.test(channelId)) return BLOCK;
     const clean = (s: string | null, max: number) => (s ?? '').replace(/[\r\n()]/g, ' ').trim().slice(0, max);
     const handle = clean(u.searchParams.get('h'), 100);
-    return { action: 'blockChannel', channelId, handle: /^@[\w.-]+$/.test(handle) ? handle : '', name: clean(u.searchParams.get('n'), 100) || channelId };
+    return { action: 'blockChannel', channelId, handle: /^@[\w.-]+$/.test(handle) ? handle : '', name: clean(u.searchParams.get('n'), 100).replace(/\bUC[\w-]{22}\b/g, '').replace(/\s+/g, ' ').trim() || channelId };
   }
   // YouTube's outbound-link interstitial: send its real target straight to the browser.
   if (u.hostname.endsWith('youtube.com') && u.pathname === '/redirect') {

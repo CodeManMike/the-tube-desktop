@@ -2,21 +2,27 @@ import { Plugin } from '../shared/plugin';
 
 // One blocklist line: "Name (UC…)", "@handle" or a bare channel id.
 export function parseBlockEntry(line: string): { id?: string; handle?: string } | null {
-  const id = line.match(/\b(UC[\w-]{22})\b/)?.[1];
+  const id = line.match(/\((UC[\w-]{22})\)\s*$/)?.[1] ?? line.match(/\b(UC[\w-]{22})\b/)?.[1];
   if (id) return { id };
   const handle = line.trim().match(/^@[\w.-]{1,100}$/)?.[0];
   return handle ? { handle: handle.toLowerCase() } : null;
 }
 
-// Removes videos from blocked channels from feeds, search and Up next. Never on a channel's
-// own page. Self-contained: serialised on its own.
-export function removeBlocked(data: any, settings: Record<string, unknown>): any {
-  if (/^\/(@|channel\/|c\/|user\/)/.test(location.pathname)) return data;
+// Removes videos from blocked channels from feeds, search and Up next. Never on a channel
+// page: told from the request's browseId (the URL changes only after the fetch), else the URL.
+// Self-contained: serialised on its own.
+export function removeBlocked(data: any, settings: Record<string, unknown>, ctx?: { endpoint: string; browseId?: string }): any {
+  const channelPage =
+    ctx?.endpoint === 'browse' && ctx.browseId ? ctx.browseId.startsWith('UC')
+    : ctx?.endpoint === 'search' || ctx?.endpoint === 'next' ? false
+    : /^\/(@|channel\/|c\/|user\/)/.test(location.pathname);
+  if (channelPage) return data;
   const ids = new Set<string>();
   const handles = new Set<string>();
   for (const line of Array.isArray(settings.channels) ? settings.channels : []) {
     if (typeof line !== 'string') continue;
-    const id = line.match(/\b(UC[\w-]{22})\b/)?.[1];
+    // The id in the trailing brackets is the real one; a name may look like an id.
+    const id = line.match(/\((UC[\w-]{22})\)\s*$/)?.[1] ?? line.match(/\b(UC[\w-]{22})\b/)?.[1];
     if (id) ids.add(id);
     else if (/^@[\w.-]{1,100}$/.test(line.trim())) handles.add(line.trim().toLowerCase());
   }
@@ -98,18 +104,42 @@ export function addBlockMenuItem(data: any, _settings: Record<string, unknown>):
 }
 
 // A channel blocked from the menu disappears at once, without reloading the page.
-function blocklistScript(_settings: Record<string, unknown>): void {
+function blocklistScript(settings: Record<string, unknown>): void {
   const bridge = (window as any).ttdBlock;
   if (!bridge) return;
   const ITEMS = 'ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model';
-  bridge.onAdded((c: { channelId?: string; handle?: string }) => {
-    const handle = String(c?.handle ?? '').toLowerCase();
+  // Channels blocked in this page's lifetime, matched by link (YouTube reuses item elements,
+  // so each sweep re-checks and shows an element again once it holds another channel).
+  const blocked: { id: string; handle: string }[] = [];
+  const matches = (el: HTMLElement) => {
+    const hrefs = [...el.querySelectorAll('a[href]')].map((a) => (a.getAttribute('href') ?? '').toLowerCase());
+    return blocked.some((b) => hrefs.some((h) => h.includes('/channel/' + b.id) || (b.handle && (h === '/' + b.handle || h.startsWith('/' + b.handle + '/')))));
+  };
+  const sweep = () => {
     for (const el of document.querySelectorAll<HTMLElement>(ITEMS)) {
-      const hrefs = [...el.querySelectorAll('a[href]')].map((a) => (a.getAttribute('href') ?? '').toLowerCase());
-      if (hrefs.some((h) => (c.channelId && h.includes('/channel/' + c.channelId.toLowerCase())) || (handle && (h === '/' + handle || h.startsWith('/' + handle + '/'))))) {
+      const hit = matches(el);
+      if (hit && !el.dataset.ttdBlocked) {
+        el.dataset.ttdBlocked = '1';
         el.style.display = 'none';
+      } else if (!hit && el.dataset.ttdBlocked) {
+        delete el.dataset.ttdBlocked;
+        el.style.display = '';
       }
     }
+  };
+  let pending = 0;
+  new MutationObserver(() => {
+    if (blocked.length && !pending) pending = window.setTimeout(() => ((pending = 0), sweep()), 250);
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
+  bridge.onAdded((c: { channelId?: string; handle?: string; name?: string }) => {
+    if (typeof c?.channelId !== 'string') return;
+    blocked.push({ id: c.channelId.toLowerCase(), handle: String(c.handle ?? '').toLowerCase() });
+    // The transforms read this same settings object: later scrolls and navigations in this
+    // page filter the channel too, without a reload.
+    const list = Array.isArray(settings.channels) ? (settings.channels as string[]) : [];
+    if (!list.some((l) => l.includes(c.channelId!))) settings.channels = [...list, `(${c.channelId})`];
+    sweep();
   });
 }
 

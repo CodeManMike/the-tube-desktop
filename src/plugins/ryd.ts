@@ -17,13 +17,21 @@ function rydScript(_settings: Record<string, unknown>): void {
   if (!bridge || !fns?.compactCount) return;
   let shownFor: string | null = null;
   let asking: string | null = null;
+  // YouTube keeps a hidden copy of the like/dislike buttons; only the visible one counts.
+  const visible = (selector: string) =>
+    [...document.querySelectorAll<HTMLElement>(selector)].find((el) => el.getBoundingClientRect().width > 0) ?? null;
   const update = () => {
     if (location.pathname !== '/watch') return;
     const id = new URL(location.href).searchParams.get('v');
-    const button = document.querySelector('dislike-button-view-model button') as HTMLElement | null;
+    const button = visible('dislike-button-view-model button');
     if (!id || !button) return;
-    const existing = button.querySelector('.ttd-dislikes');
-    if (id === shownFor && existing) return;
+    const existing = button.querySelector('.ttd-dislikes') as HTMLElement | null;
+    if (id === shownFor && existing) {
+      button.classList.replace('ytSpecButtonShapeNextIconButton', 'ytSpecButtonShapeNextIconLeading');
+      return;
+    }
+    // A new video: never leave the previous video's count showing while (or if) the lookup fails.
+    if (id !== shownFor) document.querySelectorAll('.ttd-dislikes').forEach((s) => s.remove());
     if (asking === id) return;
     asking = id;
     bridge
@@ -32,19 +40,23 @@ function rydScript(_settings: Record<string, unknown>): void {
         asking = null;
         const now = new URL(location.href).searchParams.get('v');
         if (now !== id || !v || !Number.isFinite(v.dislikes)) return;
-        const btn = document.querySelector('dislike-button-view-model button') as HTMLElement | null;
+        const btn = visible('dislike-button-view-model button');
         if (!btn) return;
         let span = btn.querySelector('.ttd-dislikes') as HTMLElement | null;
         if (!span) {
           span = document.createElement('span');
           span.className = 'ttd-dislikes';
-          // Match the like button's count text.
-          const likeText = document.querySelector('like-button-view-model .ytSpecButtonShapeNextButtonTextContent, like-button-view-model [class*="TextContent"]');
-          if (likeText) span.className += ' ' + likeText.className;
+          // Match the like button's count text (the visible one's leaf element holding digits).
+          const like = visible('like-button-view-model button');
+          const likeText = like && [...like.querySelectorAll('*')].find((el) => el.children.length === 0 && /\d/.test(el.textContent ?? ''));
+          if (likeText?.className) span.className += ' ' + likeText.className;
           span.style.marginLeft = '6px';
           btn.appendChild(span);
         }
         span.textContent = fns.compactCount(v.dislikes);
+        // YouTube's dislike button is icon-only (fixed width); the like button's icon-and-text
+        // shape gives the count room.
+        btn.classList.replace('ytSpecButtonShapeNextIconButton', 'ytSpecButtonShapeNextIconLeading');
         shownFor = id;
       })
       .catch(() => (asking = null));

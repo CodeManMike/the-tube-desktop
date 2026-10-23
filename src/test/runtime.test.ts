@@ -187,3 +187,13 @@ test('a throwing early script is contained and named in the log', () => {
   assert.deepEqual(ran, ['good']);
   assert.ok(logs.some((l) => l.includes('bad') && l.includes('boom')), logs.join('|'));
 });
+
+test('transforms receive the endpoint and the browseId of the request', async () => {
+  fakePage();
+  const seen: any[] = [];
+  (globalThis as any).__seen = seen;
+  pageRuntime([entry('a', { browse: '(d, s, ctx) => { globalThis.__seen.push(ctx); return d; }' })].map(live));
+  await fetch(BROWSE, { method: 'POST', body: JSON.stringify({ browseId: 'FEhistory' }) });
+  await fetch(BROWSE, { method: 'POST', body: JSON.stringify({ continuation: 'x' }) });
+  assert.deepEqual(seen, [{ endpoint: 'browse', browseId: 'FEhistory' }, { endpoint: 'browse' }]);
+});

@@ -6,7 +6,10 @@ import { SettingDef } from './settings';
 export type Endpoint = 'browse' | 'next' | 'player' | 'search' | 'initialData' | 'initialPlayerResponse';
 
 // Runs inside the page, serialised with toString(): it must not reference anything outside its body.
-export type Transform = (data: any, settings: Record<string, unknown>) => any;
+// What a response is for: its endpoint, and for /browse the page asked for (browseId), which
+// tells Home from History or a channel before the URL changes (continuations carry none).
+export type TransformContext = { endpoint: string; browseId?: string };
+export type Transform = (data: any, settings: Record<string, unknown>, ctx?: TransformContext) => any;
 
 export type PluginManifest = {
   id: string;

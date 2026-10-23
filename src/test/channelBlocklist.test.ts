@@ -57,3 +57,18 @@ test("a menu without Don't recommend channel is unchanged", () => {
   const out = addBlockMenuItem(feed(lockup('a', RICK, '@r', [other])), {});
   assert.equal(out.contents[0].richItemRenderer.content.lockupViewModel.metadata.lockupMetadataViewModel.menuButton.buttonViewModel.onTap.innertubeCommand.showSheetCommand.panelLoadingStrategy.inlineContent.sheetViewModel.content.listViewModel.listItems.length, 1);
 });
+
+test('a browse response for a channel page is untouched while the URL still shows Home', () => {
+  at('/');
+  assert.deepEqual(ids(removeBlocked(feed(lockup('a', RICK, '@r')), { channels: [RICK] }, { endpoint: 'browse', browseId: RICK })), ['a']);
+});
+
+test('a Home response is filtered while the URL still shows a channel page', () => {
+  at('/@someone');
+  assert.deepEqual(ids(removeBlocked(feed(lockup('a', RICK, '@r')), { channels: [RICK] }, { endpoint: 'browse', browseId: 'FEwhat_to_watch' })), []);
+});
+
+test('the id in the trailing brackets wins over an id-shaped name', () => {
+  const fake = 'UC' + 'f'.repeat(22);
+  assert.deepEqual(parseBlockEntry(`${fake} (${RICK})`), { id: RICK });
+});

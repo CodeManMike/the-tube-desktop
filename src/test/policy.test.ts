@@ -62,3 +62,8 @@ test('routeUrl: Block channel becomes a blockChannel route; a bad channel id is 
   });
   assert.deepEqual(routeUrl('https://www.youtube.com/ttd/block-channel?c=nope&n=x'), { action: 'block' });
 });
+
+test('routeUrl: id-shaped text is stripped from a blocked channel name', () => {
+  const r: any = routeUrl('https://www.youtube.com/ttd/block-channel?c=UCuAXFkgsw1L7xaCfnd5JJOw&n=UCffffffffffffffffffffff%20fan');
+  assert.equal(r.name, 'fan');
+});

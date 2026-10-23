@@ -92,6 +92,13 @@ function card(item: Item): HTMLElement {
   return root;
 }
 
-bridge.list().then((items) => {
-  document.getElementById('plugins')!.append(...items.map(card));
+// Re-read on focus: a channel blocked from YouTube's menu changes settings behind this window,
+// and an edit made from stale values would overwrite it.
+const render = () =>
+  bridge.list().then((items) => {
+    document.getElementById('plugins')!.replaceChildren(...items.map(card));
+  });
+render();
+addEventListener('focus', () => {
+  if (!document.activeElement || document.activeElement === document.body) render();
 });
