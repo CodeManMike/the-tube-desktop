@@ -22,7 +22,31 @@ export type PluginManifest = {
   settings: SettingDef[];
 };
 
-export type MainContext = { mainWindow: BrowserWindow; store: SettingsStore; log: (msg: string) => void };
+// What tray, hotkeys and the like act through: whichever player is active (PiP or main).
+export type PlayerControls = {
+  playPause(): void;
+  next(): void;
+  previous(): void;
+  togglePip(): void;
+  showHide(): void;
+  openSettings(): void;
+  quit(): void;
+  nowPlaying(): string | null;
+};
+// Global shortcuts (Electron's globalShortcut in the app; a fake in tests).
+export type ShortcutHost = { register(accel: string, fn: () => void): boolean; unregister(accel: string): void };
+
+export type MainContext = {
+  mainWindow: BrowserWindow;
+  store: SettingsStore;
+  log: (msg: string) => void;
+  controls: PlayerControls;
+  shortcuts: ShortcutHost;
+  // Closing the main window hides it instead (tray "Keep running in the tray when closed").
+  setHideOnClose(on: boolean): void;
+  // This plugin's own settings, filled in by the registry.
+  settings?: Record<string, unknown>;
+};
 
 // Where a plugin's page parts run: the main window, the PiP window, or both.
 export type PageContext = 'main' | 'pip';
@@ -42,7 +66,8 @@ export type Plugin = {
   earlyScript?: (settings: Record<string, unknown>) => void;
   // Self-contained helpers the page script can call as globalThis.__ttdFns[name].
   pageFunctions?: Record<string, Function>;
-  main?: (ctx: MainContext) => void;
+  // May return a disposer; hooks are restarted (disposed, then run again) on settings changes.
+  main?: (ctx: MainContext) => void | (() => void);
 };
 
 // What the page runtime receives for one enabled plugin: functions travel as source text.

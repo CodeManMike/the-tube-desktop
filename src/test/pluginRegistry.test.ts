@@ -55,7 +55,7 @@ test('a throwing main hook is logged and other hooks still run', () => {
     [plugin('bad', { main: () => { throw new Error('boom'); } }), plugin('good', { main: () => { ran = true; } })],
     store(),
   );
-  reg.runMainHooks({ mainWindow: {} as any, store: store(), log: (m) => logs.push(m) });
+  reg.restartMainHooks({ mainWindow: {} as any, store: store(), log: (m: string) => logs.push(m), controls: null as any, shortcuts: null as any, setHideOnClose: () => {} });
   assert.equal(ran, true);
   assert.deepEqual(logs, ['[ttd] bad main hook failed: boom']);
 });
@@ -102,4 +102,43 @@ test('a plugin can borrow another plugin setting', () => {
   assert.equal(reg.pageEntries().find((e) => e.id === 'hw')!.settings.watchedPercent, 80);
   s.setValue('queue', owner.manifest.settings[0], 90);
   assert.equal(reg.pageEntries().find((e) => e.id === 'hw')!.settings.watchedPercent, 90);
+});
+
+const mainCtx = (logs: string[] = []) => ({ mainWindow: null as any, store: null as any, log: (m: string) => logs.push(m), controls: null as any, shortcuts: null as any, setHideOnClose: () => {} });
+
+test('restartMainHooks disposes running hooks before running them again, with their settings', () => {
+  const events: string[] = [];
+  const p = plugin('t', {
+    manifest: { id: 't', name: 't', defaultEnabled: true, settings: [{ key: 'x', label: 'x', type: 'number', default: 1 }] },
+    main: (ctx: any) => { events.push('run:' + ctx.settings.x); return () => events.push('dispose'); },
+  });
+  const reg = new PluginRegistry([p], store());
+  reg.restartMainHooks(mainCtx());
+  reg.restartMainHooks(mainCtx());
+  assert.deepEqual(events, ['run:1', 'dispose', 'run:1']);
+});
+
+test("a disabled plugin's hook is disposed and not rerun", () => {
+  const events: string[] = [];
+  const s = store();
+  const reg = new PluginRegistry([plugin('t', { main: () => { events.push('run'); return () => events.push('dispose'); } })], s);
+  reg.restartMainHooks(mainCtx());
+  s.setEnabled('t', false);
+  reg.restartMainHooks(mainCtx());
+  assert.deepEqual(events, ['run', 'dispose']);
+});
+
+test('a throwing hook or disposer is contained', () => {
+  const logs: string[] = [];
+  const events: string[] = [];
+  const reg = new PluginRegistry([
+    plugin('bad', { main: () => { throw new Error('boom'); } }),
+    plugin('badDispose', { main: () => () => { throw new Error('dispose boom'); } }),
+    plugin('good', { main: () => { events.push('good'); } }),
+  ], store());
+  reg.restartMainHooks(mainCtx(logs));
+  reg.restartMainHooks(mainCtx(logs));
+  assert.deepEqual(events, ['good', 'good']);
+  assert.ok(logs.some((l) => l.includes('bad') && l.includes('boom')));
+  assert.ok(logs.some((l) => l.includes('badDispose') && l.includes('dispose boom')));
 });

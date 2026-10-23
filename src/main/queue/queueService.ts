@@ -88,6 +88,21 @@ export class QueueService {
     this.apply(ev);
   }
 
+  // The title of what's playing (tray tooltip), from the last progress report.
+  nowPlaying(): string | null {
+    return this.playing?.title ?? null;
+  }
+
+  // Next or previous from the tray or a hotkey: the same as PiP's buttons, for whatever is
+  // playing now (PiP or the main window).
+  step(direction: 'next' | 'previous'): void {
+    const playing = this.watching();
+    if (!playing) return;
+    const command = direction === 'next' ? this.model.next(playing.videoId) : this.model.previous(playing.videoId);
+    this.commit(command);
+    if (direction === 'next') this.refill();
+  }
+
   // Back from PiP: the main window carries on with PiP's video at PiP's time.
   resumeInMain(at: Playing): void {
     this.setPlayer(null);

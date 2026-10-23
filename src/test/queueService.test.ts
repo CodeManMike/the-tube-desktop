@@ -76,3 +76,18 @@ test('watching() follows the player URL while PiP is open', () => {
   service.setPlayer(player);
   assert.equal((service as any).watching()?.videoId, C);
 });
+
+test("step('next') with PiP as the player sends the command to PiP", () => {
+  const { service, pipCommands, player } = setup();
+  service.setPlayer(player);
+  service.step('next');
+  assert.deepEqual(pipCommands, [{ navigate: { videoId: B, timeSec: 0 } }]);
+});
+
+test('step does nothing without a watched video', () => {
+  const { service, main } = setup();
+  main.url = 'https://www.youtube.com/';
+  const before = main.sent.length;
+  service.step('next');
+  assert.equal(main.sent.length, before);
+});

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, components, net, screen, session, shell } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, components, net, screen, session, shell } from 'electron';
 import path from 'path';
 import { PARTITION } from './config';
 import { migrateLegacyProfile } from './migrate';
@@ -15,6 +15,7 @@ import { QueueService } from './queue/queueService';
 import { QueueStore } from './queue/queueStore';
 import { PipWindow } from './pip/pipWindow';
 import { SponsorBlockClient } from './skip/sponsorBlock';
+import { createPlayerControls } from './desktop/playerControls';
 import { RydClient } from './ryd';
 
 const ICON = path.join(app.getAppPath(), 'assets', 'icons', 'favicon.ico');
@@ -36,6 +37,9 @@ let mainWindow: BrowserWindow | null = null;
 let bundle: PageBundleHandle | null = null;
 let queueService: QueueService | null = null;
 let pipWindow: PipWindow | null = null;
+// Tray "Keep running in the tray when closed": closing hides the window until a real quit.
+let hideOnClose = false;
+let quitting = false;
 
 // Two instances on one profile can't share the cookie database, so a second one
 // would start signed out. Hand over to the running window instead.
@@ -93,7 +97,14 @@ export function createMainWindow(store: SettingsStore): BrowserWindow {
   win.setMenuBarVisibility(false);
   if (saved?.maximized) win.maximize();
 
-  win.on('close', () => store.setWindowState({ ...win.getNormalBounds(), maximized: win.isMaximized() }));
+  win.on('close', (event) => {
+    if (hideOnClose && !quitting) {
+      event.preventDefault();
+      win.hide();
+      return;
+    }
+    store.setWindowState({ ...win.getNormalBounds(), maximized: win.isMaximized() });
+  });
 
   // Only YouTube and Google sign-in load in the signed-in session. Web links open in the
   // default browser; every other scheme is dropped (see routeUrl).
@@ -299,7 +310,26 @@ if (isPrimary) app.whenReady().then(async () => {
   // A settings change rebuilds the page bundle and reloads YouTube; debounced so a
   // burst of edits causes one reload.
   let reloadTimer: NodeJS.Timeout | undefined;
+  // Tray, hotkeys and anything else with main-process parts act through these controls.
+  const controls = createPlayerControls({
+    activeContents: () => pipWindow?.contents() ?? mainWindow?.webContents ?? null,
+    queue: { step: (dir) => queueService?.step(dir) },
+    pip: { isOpen: () => !!pipWindow?.isOpen(), open: () => void pipWindow?.open(), close: () => pipWindow?.close() },
+    mainWindow: () => mainWindow,
+    openSettings: () => openSettingsWindow(),
+    quit: () => app.quit(),
+    nowPlaying: () => queueService?.nowPlaying() ?? null,
+  });
+  const hookContext = {
+    mainWindow,
+    store,
+    log: (msg: string) => console.log(msg),
+    controls,
+    shortcuts: { register: (a: string, fn: () => void) => globalShortcut.register(a, fn), unregister: (a: string) => globalShortcut.unregister(a) },
+    setHideOnClose: (on: boolean) => (hideOnClose = on),
+  };
   registerSettingsIpc(registry, store, () => {
+    registry.restartMainHooks(hookContext);
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(async () => {
       try {
@@ -310,7 +340,7 @@ if (isPrimary) app.whenReady().then(async () => {
       }
     }, 400);
   });
-  registry.runMainHooks({ mainWindow, store, log: (msg) => console.log(msg) });
+  registry.restartMainHooks(hookContext);
 
   // YouTube redirects the first load (?themeRefresh=1), which aborts the original navigation.
   mainWindow.loadURL(HOME).catch((err) => {
@@ -318,4 +348,6 @@ if (isPrimary) app.whenReady().then(async () => {
   });
 });
 
+app.on('before-quit', () => (quitting = true));
+app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => app.quit());

@@ -66,11 +66,24 @@ export class PluginRegistry {
     this.sessionDisabled.add(id);
   }
 
-  runMainHooks(ctx: MainContext): void {
+  private readonly disposers = new Map<string, () => void>();
+
+  // Stops every running main hook, then starts the enabled ones with their current settings.
+  // Called at startup and after any settings change.
+  restartMainHooks(ctx: MainContext): void {
+    for (const [id, dispose] of this.disposers) {
+      try {
+        dispose();
+      } catch (err) {
+        ctx.log(`[ttd] ${id} main hook cleanup failed: ${(err as Error).message}`);
+      }
+    }
+    this.disposers.clear();
     for (const p of this.plugins) {
       if (!p.main || !this.enabled(p)) continue;
       try {
-        p.main(ctx);
+        const dispose = p.main({ ...ctx, settings: { ...this.store.values(p.manifest.id, p.manifest.settings), ...this.borrowed(p) } });
+        if (typeof dispose === 'function') this.disposers.set(p.manifest.id, dispose);
       } catch (err) {
         ctx.log(`[ttd] ${p.manifest.id} main hook failed: ${(err as Error).message}`);
       }

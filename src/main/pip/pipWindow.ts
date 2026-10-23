@@ -61,6 +61,11 @@ export class PipWindow {
     return this.win !== null;
   }
 
+  // The PiP page's contents while open (the player the tray and hotkeys act on).
+  contents(): Electron.WebContents | null {
+    return this.win && !this.win.isDestroyed() ? this.win.webContents : null;
+  }
+
   // For IPC that both windows may use (SponsorBlock lookups).
   ownsSender(wc: Electron.WebContents): boolean {
     return !!this.win && !this.win.isDestroyed() && wc === this.win.webContents;
