@@ -59,8 +59,14 @@ function configureSession(): void {
   ses.webRequest.onBeforeSendHeaders({ urls: SIGNIN_URLS }, (details, callback) => {
     callback({ requestHeaders: { ...details.requestHeaders, 'User-Agent': ELECTRON_UA } });
   });
-  ses.setPermissionRequestHandler((_wc, permission, callback) => callback(permissionAllowed(permission)));
-  ses.setPermissionCheckHandler((_wc, permission) => permissionAllowed(permission));
+  ses.setPermissionRequestHandler((_wc, permission, callback, details: any) => {
+    const ok = permissionAllowed(permission, details?.mediaTypes);
+    console.log(`[permission] ${permission}${details?.mediaTypes ? ` (${details.mediaTypes.join(', ')})` : ''} ${ok ? 'allowed' : 'denied'}`);
+    callback(ok);
+  });
+  ses.setPermissionCheckHandler((_wc, permission, _origin, details: any) =>
+    permissionAllowed(permission, details?.mediaType ? [details.mediaType] : undefined),
+  );
 }
 
 export function createMainWindow(store: SettingsStore): BrowserWindow {

@@ -24,7 +24,9 @@ export function isInAppUrl(url: string): boolean {
 
 const ALLOWED_PERMISSIONS = new Set(['fullscreen', 'media', 'clipboard-sanitized-write', 'pointerLock']);
 
-export function permissionAllowed(permission: string): boolean {
+// 'media' is allowed for the microphone only (voice search); the camera never.
+export function permissionAllowed(permission: string, mediaTypes?: string[]): boolean {
+  if (permission === 'media') return !!mediaTypes && mediaTypes.length > 0 && mediaTypes.every((t) => t === 'audio');
   return ALLOWED_PERMISSIONS.has(permission);
 }
 

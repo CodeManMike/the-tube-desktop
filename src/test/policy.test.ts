@@ -48,3 +48,10 @@ test('routeUrl: TTD queue-add links become queueAdd with a valid id', () => {
   assert.deepEqual(routeUrl('https://www.youtube.com/ttd/queue-add?v=aaaaaaaaaaa'), { action: 'queueAdd', videoId: 'aaaaaaaaaaa' });
   assert.deepEqual(routeUrl('https://www.youtube.com/ttd/queue-add?v=bad'), { action: 'block' });
 });
+
+test('media permission is the microphone only (voice search), never the camera', () => {
+  assert.equal(permissionAllowed('media', ['audio']), true);
+  assert.equal(permissionAllowed('media', ['video']), false);
+  assert.equal(permissionAllowed('media', ['audio', 'video']), false);
+  assert.equal(permissionAllowed('media', []), false);
+});
