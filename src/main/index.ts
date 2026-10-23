@@ -140,7 +140,7 @@ function blockChannel(route: Extract<Route, { action: 'blockChannel' }>): void {
     console.log(`[blocklist] blocked ${route.channelId}`);
   }
   bundle?.refresh().catch((err) => console.warn('[bundle] refresh failed:', err.message));
-  mainWindow?.webContents.send('blocklist:added', { channelId: route.channelId, handle: route.handle });
+  mainWindow?.webContents.send('blocklist:added', { channelId: route.channelId, handle: route.handle, name: route.name });
 }
 
 function buildMenu(): void {

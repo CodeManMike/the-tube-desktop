@@ -110,10 +110,12 @@ function blocklistScript(settings: Record<string, unknown>): void {
   const ITEMS = 'ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, yt-lockup-view-model';
   // Channels blocked in this page's lifetime, matched by link (YouTube reuses item elements,
   // so each sweep re-checks and shows an element again once it holds another channel).
-  const blocked: { id: string; handle: string }[] = [];
+  const blocked: { id: string; handle: string; name: string }[] = [];
   const matches = (el: HTMLElement) => {
     const hrefs = [...el.querySelectorAll('a[href]')].map((a) => (a.getAttribute('href') ?? '').toLowerCase());
-    return blocked.some((b) => hrefs.some((h) => h.includes('/channel/' + b.id) || (b.handle && (h === '/' + b.handle || h.startsWith('/' + b.handle + '/')))));
+    // Newer cards (yt-lockup-view-model) have no channel link: their first metadata row is the name.
+    const name = el.querySelector('.ytContentMetadataViewModelMetadataRow .ytContentMetadataViewModelMetadataText')?.textContent?.trim().toLowerCase() ?? '';
+    return blocked.some((b) => (b.name && name === b.name) || hrefs.some((h) => h.includes('/channel/' + b.id) || (b.handle && (h === '/' + b.handle || h.startsWith('/' + b.handle + '/')))));
   };
   const sweep = () => {
     for (const el of document.querySelectorAll<HTMLElement>(ITEMS)) {
@@ -134,7 +136,7 @@ function blocklistScript(settings: Record<string, unknown>): void {
 
   bridge.onAdded((c: { channelId?: string; handle?: string; name?: string }) => {
     if (typeof c?.channelId !== 'string') return;
-    blocked.push({ id: c.channelId.toLowerCase(), handle: String(c.handle ?? '').toLowerCase() });
+    blocked.push({ id: c.channelId.toLowerCase(), handle: String(c.handle ?? '').toLowerCase(), name: String(c.name ?? '').trim().toLowerCase() });
     // The transforms read this same settings object: later scrolls and navigations in this
     // page filter the channel too, without a reload.
     const list = Array.isArray(settings.channels) ? (settings.channels as string[]) : [];
