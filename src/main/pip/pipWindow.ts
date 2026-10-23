@@ -187,6 +187,7 @@ export class PipWindow {
         this.drag = null;
       });
 
+      this.devHook(win);
       await attachPageBundle(win.webContents, () => [pipEntry()]);
       this.queue.setPlayer({ webContents: win.webContents, navigate: (cmd) => this.send(cmd) }, () => this.dismiss());
       console.log(`[pip] open ${at.videoId} at ${at.timeSec.toFixed(1)}s`);
@@ -197,6 +198,26 @@ export class PipWindow {
     } finally {
       this.opening = false;
     }
+  }
+
+  // Dev-only, like TTD_DEV_EVAL for the main window: TTD_DEV_EVAL_PIP=<file> runs that
+  // script in PiP after each load (muted); '[ttd-dev] capture <name>' saves a screenshot.
+  private devHook(win: BrowserWindow): void {
+    const file = process.env.TTD_DEV_EVAL_PIP;
+    if (!file) return;
+    const fs = require('fs');
+    win.webContents.setAudioMuted(true);
+    win.webContents.on('console-message', async (event: any, _level?: number, legacy?: string) => {
+      const m = String(event.message ?? legacy ?? '').match(/^\[ttd-dev\] capture ([\w-]+)$/);
+      if (!m || win.isDestroyed()) return;
+      fs.writeFileSync(path.join(path.dirname(file), `${m[1]}.png`), (await win.webContents.capturePage()).toPNG());
+      console.log('[dev-capture]', m[1]);
+    });
+    win.webContents.on('did-finish-load', async () => {
+      if (!WATCH.test(win.webContents.getURL())) return;
+      const result = await win.webContents.executeJavaScript(fs.readFileSync(file, 'utf8')).catch((err: Error) => `error: ${err.message}`);
+      console.log('[dev-eval-pip]', JSON.stringify(result));
+    });
   }
 
   // Back to the main window at PiP's time.

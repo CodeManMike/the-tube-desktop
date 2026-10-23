@@ -11,13 +11,14 @@ function pipButtonScript(): void {
     b.title = 'Picture-in-picture (Ctrl+Shift+P)';
     b.setAttribute('aria-label', 'Picture-in-picture');
     const svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
+    // YouTube's own player icons are drawn in a 36×36 box; a 24-unit glyph centred in it matches them.
+    svg.setAttribute('viewBox', '0 0 36 36');
     svg.setAttribute('width', '100%');
     svg.setAttribute('height', '100%');
     const path = document.createElementNS(NS, 'path');
     path.setAttribute('d', 'M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z');
     path.setAttribute('fill', '#fff');
-    path.setAttribute('transform', 'translate(6 6) scale(0.5)');
+    path.setAttribute('transform', 'translate(6 6)');
     svg.appendChild(path);
     b.appendChild(svg);
     b.addEventListener('click', () => api.pip.open());
