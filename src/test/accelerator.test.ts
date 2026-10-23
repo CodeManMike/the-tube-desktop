@@ -5,7 +5,7 @@ import { normaliseAccelerator } from '../main/desktop/accelerator';
 test('modifiers and keys are put in canonical form', () => {
   assert.equal(normaliseAccelerator('ctrl+alt+space'), 'Control+Alt+Space');
   assert.equal(normaliseAccelerator('Ctrl + Alt + Right'), 'Control+Alt+Right');
-  assert.equal(normaliseAccelerator('win+shift+p'), 'Super+Shift+P');
+  assert.equal(normaliseAccelerator('win+shift+p'), 'Shift+Super+P');
   assert.equal(normaliseAccelerator('Control+F5'), 'Control+F5');
 });
 
