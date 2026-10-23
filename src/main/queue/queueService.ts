@@ -194,6 +194,8 @@ export class QueueService {
       case 'action': {
         const { action, uid } = ev;
         if (action === 'back') command = this.model.back();
+        else if (ev.videoId && action === 'next') command = this.model.next(ev.videoId);
+        else if (ev.videoId && action === 'previous') command = this.model.previous(ev.videoId);
         else if (uid && action === 'jump') command = this.model.jump(uid);
         else if (uid && action === 'remove') this.model.remove(uid);
         else if (uid && action === 'playNext') {

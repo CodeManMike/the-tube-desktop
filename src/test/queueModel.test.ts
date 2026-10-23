@@ -300,3 +300,31 @@ test('extendPlaylist keeps the playhead on the right copy of a repeated video', 
   assert.equal(m.extendPlaylist('PLx', [v(B), v(C), v(B), v(D)], snapshot), true);
   assert.equal(m.state().current, 2);
 });
+
+test('next behaves like the current video ending', () => {
+  const m = model(); m.add(v(A)); m.add(v(B)); m.jump(m.state().items[0].uid);
+  assert.deepEqual(m.next(A), { navigate: { videoId: B, timeSec: 0 } });
+  assert.equal(m.state().current, 1);
+});
+
+test('next at the end of the queue does nothing', () => {
+  const m = model(); m.add(v(A)); m.jump(m.state().items[0].uid);
+  assert.equal(m.next(A), null);
+});
+
+test('previous goes to the previous item', () => {
+  const m = model(); m.add(v(A)); m.add(v(B)); m.jump(m.state().items[1].uid);
+  assert.deepEqual(m.previous(B), { navigate: { videoId: A, timeSec: 0 } });
+  assert.equal(m.state().current, 0);
+});
+
+test('previous on the first item restarts it', () => {
+  const m = model(); m.add(v(A)); m.jump(m.state().items[0].uid);
+  assert.deepEqual(m.previous(A), { navigate: { videoId: A, timeSec: 0 } });
+});
+
+test('previous on a detour returns to where it started', () => {
+  const m = model(); m.add(v(A)); m.jump(m.state().items[0].uid);
+  m.navigated(E, { videoId: A, timeSec: 42 });
+  assert.deepEqual(m.previous(E), { navigate: { videoId: A, timeSec: 42 } });
+});

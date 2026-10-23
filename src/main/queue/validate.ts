@@ -19,12 +19,15 @@ export type PageEvent =
     }
   | { type: 'fetched'; requestId: string; ok: boolean; items: Candidate[]; continuation: string | null }
   | { type: 'shuffle'; action: 'creator' | 'addCreator' | 'topic' | 'stop'; channelId?: string; name?: string; query?: string }
-  | { type: 'action'; action: 'jump' | 'remove' | 'playNext' | 'back'; uid?: string }
+  | { type: 'action'; action: 'jump' | 'remove' | 'playNext' | 'back' | 'next' | 'previous'; uid?: string; videoId?: string }
   | { type: 'move'; uid: string; toIndex: number };
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 const MAX_PLAYLIST = 500;
 const ACTIONS = ['jump', 'remove', 'playNext', 'back'] as const;
+// Steps relative to the playing video: they name it instead of a queue item.
+const STEP_ACTIONS = ['next', 'previous'] as const;
+const PIP_EVENT_TYPES = ['navigated', 'progress', 'ended', 'action'];
 const SHUFFLE_ACTIONS = ['creator', 'addCreator', 'topic', 'stop'] as const;
 const CHANNEL_ID = /^UC[\w-]{22}$/;
 const MAX_FETCHED_ITEMS = 200;
@@ -149,6 +152,9 @@ export function validateEvent(raw: unknown): PageEvent | null {
       return o ? { type: 'shuffle', action: raw.action, channelId: o.channelId, name: o.name } : null;
     }
     case 'action': {
+      if ((STEP_ACTIONS as readonly unknown[]).includes(raw.action)) {
+        return isVideoId(raw.videoId) ? { type: 'action', action: raw.action, videoId: raw.videoId } : null;
+      }
       if (!(ACTIONS as readonly unknown[]).includes(raw.action)) return null;
       if (raw.uid !== undefined && !(typeof raw.uid === 'string' && raw.uid.length <= 64)) return null;
       return { type: 'action', action: raw.action, ...(raw.uid !== undefined && { uid: raw.uid }) };
@@ -160,4 +166,12 @@ export function validateEvent(raw: unknown): PageEvent | null {
     default:
       return null;
   }
+}
+
+// The PiP window only plays: it may report playback and ask for next/previous, nothing else.
+export function validatePipEvent(raw: unknown): PageEvent | null {
+  const ev = validateEvent(raw);
+  if (!ev || !PIP_EVENT_TYPES.includes(ev.type)) return null;
+  if (ev.type === 'action' && ev.action !== 'next' && ev.action !== 'previous') return null;
+  return ev;
 }

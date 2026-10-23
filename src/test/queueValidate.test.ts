@@ -86,3 +86,14 @@ test('watchData carries the creator and playlist size when valid', () => {
   const bad = validateEvent({ type: 'watchData', videoId: A, listParam: null, playlist: null, autoplay: null, owner: { channelId: 'x', name: 'y' }, playlistMeta: 'z' });
   assert.ok(bad && bad.type === 'watchData' && bad.owner === null && bad.playlistMeta === null);
 });
+
+import { validatePipEvent } from '../main/queue/validate';
+
+test('pip events allow only navigated, progress, ended and next/previous', () => {
+  assert.ok(validatePipEvent({ type: 'ended', videoId: 'dQw4w9WgXcQ' }));
+  assert.ok(validatePipEvent({ type: 'action', action: 'next', videoId: 'dQw4w9WgXcQ' }));
+  assert.equal(validatePipEvent({ type: 'action', action: 'remove', uid: 'x' }), null);
+  assert.equal(validatePipEvent({ type: 'shuffle', action: 'stop' }), null);
+  assert.equal(validatePipEvent({ type: 'fetched', requestId: 'a', ok: true, items: [], continuation: null }), null);
+  assert.equal(validatePipEvent({ type: 'action', action: 'next' }), null); // needs a videoId
+});
