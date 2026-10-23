@@ -6,7 +6,8 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
 
   type Item = { uid: string; videoId: string; title: string; channel: string; thumbnail: string; durationSec?: number };
   type Point = { kind: 'video'; videoId: string; timeSec: number } | { kind: 'queue'; items: Item[]; current: number | null; resumeTimeSec: number };
-  type State = { items: Item[]; current: number | null; returnStack: Point[] };
+  type Shuffle = { kind: 'creators'; creators: { channelId: string; name: string }[] } | { kind: 'topic'; query: string };
+  type State = { items: Item[]; current: number | null; returnStack: Point[]; shuffle: Shuffle | null; shuffleExhausted: boolean };
 
   let state: State | null = null;
   let lastSeq = 0;
@@ -17,6 +18,12 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
   let panel: HTMLElement | null = null;
   let dragUid: string | null = null;
   let lastCurrentUid: string | null = null;
+  // The current video's creator (from the watch data), for the Shuffle menu.
+  let currentOwner: { channelId: string; name: string } | null = null;
+  let menuOpen = false;
+  let topicInput = false;
+  // What's typed in the topic box, kept across re-renders (state updates rebuild the panel).
+  let topicDraft = '';
   let playerHooked = false;
 
   const player = () => document.querySelector('#movie_player') as any;
@@ -66,6 +73,74 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
     return `↩ Back to ${title} (${fmt(top.timeSec)})`;
   };
 
+  const shuffleLabel = (sh: Shuffle) =>
+    sh.kind === 'topic' ? `topic: ${sh.query}` : sh.creators.map((c) => c.name || 'a creator').join(', ');
+
+  const shuffleChip = (s: State): HTMLElement | null => {
+    if (!s.shuffle) return null;
+    const chip = el('div', 'ttd-shuffle-chip');
+    const label = shuffleLabel(s.shuffle);
+    chip.append(el('span', undefined, s.shuffleExhausted ? `No more unwatched videos from ${label}` : `Shuffling ${label}`));
+    const stop = el('button', undefined, '✕');
+    stop.title = 'Stop shuffling';
+    stop.addEventListener('click', () => api.report({ type: 'shuffle', action: 'stop' }));
+    chip.append(stop);
+    return chip;
+  };
+
+  const shuffleMenu = (s: State): HTMLElement => {
+    const menu = el('div', 'ttd-shuffle-menu');
+    const option = (label: string, run: () => void) => {
+      const b = el('button', undefined, label);
+      b.addEventListener('click', () => {
+        menuOpen = false;
+        run();
+        render();
+      });
+      menu.append(b);
+    };
+    if (currentOwner) {
+      const owner = currentOwner;
+      option(`Shuffle ${owner.name}`, () => api.report({ type: 'shuffle', action: 'creator', channelId: owner.channelId, name: owner.name }));
+      if (s.shuffle?.kind === 'creators' && !s.shuffle.creators.some((c) => c.channelId === owner.channelId)) {
+        option(`Add ${owner.name} to shuffle`, () => api.report({ type: 'shuffle', action: 'addCreator', channelId: owner.channelId, name: owner.name }));
+      }
+    }
+    if (topicInput) {
+      const input = el('input', 'ttd-shuffle-topic') as HTMLInputElement;
+      input.placeholder = 'Topic, e.g. lofi';
+      input.maxLength = 200;
+      input.value = topicDraft;
+      input.addEventListener('input', () => (topicDraft = input.value));
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation(); // keep YouTube's keyboard shortcuts out of the text box
+        if (e.key === 'Enter' && input.value.trim()) {
+          api.report({ type: 'shuffle', action: 'topic', query: input.value.trim() });
+          topicDraft = '';
+          menuOpen = false;
+          topicInput = false;
+          render();
+        } else if (e.key === 'Escape') {
+          topicDraft = '';
+          menuOpen = false;
+          topicInput = false;
+          render();
+        }
+      });
+      menu.append(input);
+      setTimeout(() => input.focus(), 0);
+    } else {
+      const b = el('button', undefined, 'Shuffle a topic…');
+      b.addEventListener('click', () => {
+        topicInput = true;
+        render();
+      });
+      menu.append(b);
+    }
+    if (s.shuffle) option('Stop shuffling', () => api.report({ type: 'shuffle', action: 'stop' }));
+    return menu;
+  };
+
   const render = () => {
     const host = document.querySelector('#secondary-inner');
     if (location.pathname !== '/watch' || !state || !host) {
@@ -88,8 +163,18 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
       btn.addEventListener('click', () => api.report({ type: 'action', action: 'back' }));
       head.append(btn);
     }
+    const shuffleBtn = el('button', 'ttd-queue-back ttd-shuffle-toggle', 'Shuffle ▾');
+    shuffleBtn.addEventListener('click', () => {
+      menuOpen = !menuOpen;
+      topicInput = false;
+      render();
+    });
+    head.append(shuffleBtn);
 
     const children: HTMLElement[] = [head];
+    if (menuOpen) children.push(shuffleMenu(s));
+    const chip = shuffleChip(s);
+    if (chip) children.push(chip);
     if (!s.items.length) {
       children.push(el('div', 'ttd-queue-empty', 'Use “Add to queue” on any video to start a queue. It stays put while you browse.'));
     } else {
@@ -197,7 +282,17 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
         return;
       }
       const data = captured && captured.videoId === videoId ? captured : {};
-      api.report({ type: 'watchData', videoId, playlist: data.playlist ?? null, autoplay: data.autoplay ?? null, listParam });
+      currentOwner = data.owner ?? null;
+      api.report({
+        type: 'watchData',
+        videoId,
+        playlist: data.playlist ?? null,
+        autoplay: data.autoplay ?? null,
+        listParam,
+        owner: data.owner ?? null,
+        playlistMeta: data.playlistMeta ?? null,
+      });
+      render();
     };
     sendWatchData();
   };
@@ -241,6 +336,27 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
     }
     if (location.pathname === '/watch' && panel && !panel.isConnected) render();
   }, 5000);
+
+  // Page fetches for shuffle sources and full playlists. Same-origin, so the request carries
+  // your YouTube session; only YouTube's browse and search APIs are ever called.
+  api.onFetch?.(async (req: any) => {
+    const report = (ok: boolean, page?: { items: unknown[]; continuation: string | null }) =>
+      api.report({ type: 'fetched', requestId: req?.requestId, ok, items: page?.items ?? [], continuation: page?.continuation ?? null });
+    try {
+      if (req?.endpoint !== 'browse' && req?.endpoint !== 'search') return report(false);
+      const ytcfg = (window as any).ytcfg;
+      const res = await fetch(`/youtubei/v1/${req.endpoint}?prettyPrint=false`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ context: ytcfg?.get?.('INNERTUBE_CONTEXT'), ...req.body }),
+      });
+      if (!res.ok) return report(false);
+      report(true, (globalThis as any).__ttdFns.parseVideoPage(await res.json()));
+    } catch {
+      report(false);
+    }
+  });
 
   console.log('[ttd] queue page script ready');
   api.ready();

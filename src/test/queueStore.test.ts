@@ -15,6 +15,8 @@ const STATE: QueueState = {
   returnStack: [{ kind: 'video', videoId: 'ccccccccccc', timeSec: 42 }],
   detourVideoId: 'ddddddddddd',
   sourceListId: 'PLx',
+  shuffle: { kind: 'creators', creators: [{ channelId: 'UC' + 'r'.repeat(22), name: 'Rick' }] },
+  shuffleExhausted: false,
 };
 
 test('round-trips state, including the return stack', () => {
@@ -31,7 +33,7 @@ test('corrupt file gives an empty state and keeps a .bad copy', () => {
   const file = tmp();
   fs.writeFileSync(file, '{oops');
   const s = new QueueStore(file).load();
-  assert.deepEqual(s, { items: [], current: null, returnStack: [], detourVideoId: null, sourceListId: null });
+  assert.deepEqual(s, { items: [], current: null, returnStack: [], detourVideoId: null, sourceListId: null, shuffle: null, shuffleExhausted: false });
   assert.equal(fs.readFileSync(`${file}.bad`, 'utf8'), '{oops');
 });
 
@@ -57,4 +59,14 @@ test('writeFileAtomic logs a failed write instead of throwing', () => {
   const target = path.join(dir, 'x.json');
   fs.mkdirSync(target);
   assert.equal(writeFileAtomic(target, '{}'), false);
+});
+
+test('round-trips a topic source; an invalid shuffle source loads as null', () => {
+  const file = tmp();
+  new QueueStore(file).save({ ...STATE, shuffle: { kind: 'topic', query: 'lofi' } });
+  assert.deepEqual(new QueueStore(file).load().shuffle, { kind: 'topic', query: 'lofi' });
+  fs.writeFileSync(file, JSON.stringify({ ...STATE, shuffle: { kind: 'creators', creators: [{ channelId: 'nope', name: 'x' }] } }));
+  assert.equal(new QueueStore(file).load().shuffle, null);
+  fs.writeFileSync(file, JSON.stringify({ ...STATE, shuffle: { kind: 'topic', query: 'x'.repeat(500) } }));
+  assert.equal(new QueueStore(file).load().shuffle, null);
 });

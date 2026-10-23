@@ -100,7 +100,18 @@ export function capturePlaylistAndAutoplay(data: any, _settings: Record<string, 
     };
   }
 
+  // The video's creator, for "Shuffle this creator".
+  let owner = null;
+  for (const c of watch.results?.results?.contents ?? []) {
+    const o = c?.videoSecondaryInfoRenderer?.owner?.videoOwnerRenderer;
+    const id = o?.navigationEndpoint?.browseEndpoint?.browseId;
+    if (typeof id === 'string') owner = { channelId: id, name: text(o.title) };
+  }
+  const playlistMeta = list
+    ? { totalVideos: typeof list.totalVideos === 'number' ? list.totalVideos : null, isInfinite: list.isInfinite === true }
+    : null;
+
   const videoId = data?.currentVideoEndpoint?.watchEndpoint?.videoId ?? null;
-  (globalThis as any).__ttdLastWatchData = { videoId, playlist, autoplay };
+  (globalThis as any).__ttdLastWatchData = { videoId, playlist, autoplay, owner, playlistMeta };
   return data;
 }

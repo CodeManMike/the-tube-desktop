@@ -1,4 +1,5 @@
 import { NewItem, Playing } from './model';
+import { Candidate } from './shuffle';
 
 // Events from YouTube's page are untrusted: every field is checked, capped or defaulted
 // here before it can reach the queue or the files on disk.
@@ -7,13 +8,27 @@ export type PageEvent =
   | { type: 'navigated'; videoId: string; from: Playing | null }
   | { type: 'ended'; videoId: string }
   | { type: 'progress'; videoId: string; timeSec: number; durationSec: number; title?: string; channel?: string }
-  | { type: 'watchData'; videoId: string; playlist: { playlistId: string; items: NewItem[] } | null; autoplay: NewItem | null; listParam: string | null }
+  | {
+      type: 'watchData';
+      videoId: string;
+      playlist: { playlistId: string; items: NewItem[] } | null;
+      autoplay: NewItem | null;
+      listParam: string | null;
+      owner: { channelId: string; name: string } | null;
+      playlistMeta: { totalVideos: number | null; isInfinite: boolean } | null;
+    }
+  | { type: 'fetched'; requestId: string; ok: boolean; items: Candidate[]; continuation: string | null }
+  | { type: 'shuffle'; action: 'creator' | 'addCreator' | 'topic' | 'stop'; channelId?: string; name?: string; query?: string }
   | { type: 'action'; action: 'jump' | 'remove' | 'playNext' | 'back'; uid?: string }
   | { type: 'move'; uid: string; toIndex: number };
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 const MAX_PLAYLIST = 500;
 const ACTIONS = ['jump', 'remove', 'playNext', 'back'] as const;
+const SHUFFLE_ACTIONS = ['creator', 'addCreator', 'topic', 'stop'] as const;
+const CHANNEL_ID = /^UC[\w-]{22}$/;
+const MAX_FETCHED_ITEMS = 200;
+const MAX_TOKEN = 4000;
 
 const isObject = (v: unknown): v is Record<string, any> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isVideoId = (v: unknown): v is string => typeof v === 'string' && VIDEO_ID.test(v);
@@ -43,6 +58,25 @@ export function sanitiseItem(v: unknown): NewItem | null {
     thumbnail: thumb ? v.thumbnail : `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg`,
     ...(time(v.durationSec) && { durationSec: v.durationSec }),
   };
+}
+
+function candidate(v: unknown): Candidate | null {
+  const item = sanitiseItem(v);
+  if (!item) return null;
+  const w = (v as Record<string, unknown>).watchedPercent;
+  return typeof w === 'number' && Number.isFinite(w) && w >= 0 && w <= 100 ? { ...item, watchedPercent: w } : item;
+}
+
+function owner(v: unknown): { channelId: string; name: string } | null {
+  return isObject(v) && typeof v.channelId === 'string' && CHANNEL_ID.test(v.channelId)
+    ? { channelId: v.channelId, name: text(v.name, 100) ?? '' }
+    : null;
+}
+
+function playlistMeta(v: unknown): { totalVideos: number | null; isInfinite: boolean } | null {
+  if (!isObject(v)) return null;
+  const total = Number.isInteger(v.totalVideos) && v.totalVideos >= 0 ? (v.totalVideos as number) : null;
+  return { totalVideos: total, isInfinite: v.isInfinite === true };
 }
 
 function playing(v: unknown): Playing | null | undefined {
@@ -88,7 +122,31 @@ export function validateEvent(raw: unknown): PageEvent | null {
         playlist,
         autoplay: sanitiseItem(raw.autoplay),
         listParam: shortId(raw.listParam) ? raw.listParam : null,
+        owner: owner(raw.owner),
+        playlistMeta: playlistMeta(raw.playlistMeta),
       };
+    }
+    case 'fetched': {
+      if (typeof raw.requestId !== 'string' || raw.requestId.length > 32 || !Array.isArray(raw.items)) return null;
+      const token = raw.continuation;
+      if (token !== null && token !== undefined && !(typeof token === 'string' && token.length <= MAX_TOKEN)) return null;
+      if (raw.items.length > MAX_FETCHED_ITEMS) console.warn(`[shuffle] page had ${raw.items.length} items; keeping the first ${MAX_FETCHED_ITEMS}`);
+      return {
+        type: 'fetched',
+        requestId: raw.requestId,
+        ok: raw.ok === true,
+        items: raw.items.slice(0, MAX_FETCHED_ITEMS + 50).map(candidate).filter((c): c is Candidate => c !== null).slice(0, MAX_FETCHED_ITEMS),
+        continuation: typeof token === 'string' ? token : null,
+      };
+    }
+    case 'shuffle': {
+      if (!(SHUFFLE_ACTIONS as readonly unknown[]).includes(raw.action)) return null;
+      if (raw.action === 'topic') {
+        return typeof raw.query === 'string' && raw.query.trim() && raw.query.length <= 200 ? { type: 'shuffle', action: 'topic', query: raw.query.trim() } : null;
+      }
+      if (raw.action === 'stop') return { type: 'shuffle', action: 'stop' };
+      const o = owner(raw);
+      return o ? { type: 'shuffle', action: raw.action, channelId: o.channelId, name: o.name } : null;
     }
     case 'action': {
       if (!(ACTIONS as readonly unknown[]).includes(raw.action)) return null;

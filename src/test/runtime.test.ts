@@ -142,3 +142,19 @@ test('an endpoint can carry several transforms, applied in order', async () => {
   pageRuntime([e]);
   assert.deepEqual((await (await fetch(BROWSE)).json()).steps, ['a', 'b']);
 });
+
+
+test('page functions are installed on globalThis.__ttdFns', () => {
+  fakePage();
+  delete (globalThis as any).__ttdFns;
+  pageRuntime([{ id: 'f', settings: {}, css: null, script: null, transforms: {}, functions: { triple: (x: number) => x * 3 } } as any]);
+  assert.equal((globalThis as any).__ttdFns.triple(2), 6);
+});
+
+test('page functions survive the bundle', () => {
+  const sandbox: any = { location: { hostname: 'www.youtube.com', href: 'https://www.youtube.com/' }, console };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.runInNewContext(buildPageBundle([{ id: 'f', settings: {}, transforms: {}, functions: { inc: '((x) => x + 1)' } }]), sandbox);
+  assert.equal(vm.runInNewContext('globalThis.__ttdFns.inc(1)', sandbox), 2);
+});

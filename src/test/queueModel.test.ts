@@ -221,3 +221,82 @@ test('starting a playlist from the queue saves the old queue once, at the playhe
   assert.equal(m.state().returnStack.length, 1);
   assert.deepEqual(m.back(), { navigate: { videoId: A, timeSec: 42 } });
 });
+
+
+const CREATOR = { kind: 'creators' as const, creators: [{ channelId: 'UC' + 'r'.repeat(22), name: 'Rick' }] };
+
+test('setShuffle persists in state and resets exhausted', () => {
+  const m = model();
+  m.setShuffle(CREATOR);
+  m.markShuffleExhausted();
+  assert.equal(m.state().shuffleExhausted, true);
+  m.setShuffle({ kind: 'topic', query: 'lofi' });
+  assert.deepEqual(m.state().shuffle, { kind: 'topic', query: 'lofi' });
+  assert.equal(m.state().shuffleExhausted, false);
+});
+
+test('remainingAfterCurrent counts items after current; appendItems adds to the end', () => {
+  const m = model();
+  m.add(v(B), { videoId: A, timeSec: 0 });
+  assert.equal(m.remainingAfterCurrent(), 1);
+  m.appendItems([v(C), v(D)]);
+  assert.equal(m.remainingAfterCurrent(), 3);
+  assert.equal(model().remainingAfterCurrent(), 0);
+});
+
+test('a playlist replace clears shuffle; back restores the old queue with its shuffle', () => {
+  const m = model();
+  m.add(v(B), { videoId: A, timeSec: 0 });
+  m.setShuffle(CREATOR);
+  m.replaceWithPlaylist('PLx', [v(C)], C, 0);
+  assert.equal(m.state().shuffle, null);
+  m.back();
+  assert.deepEqual(m.state().shuffle, CREATOR);
+});
+
+
+test('extendPlaylist replaces items and keeps current when the list still matches', () => {
+  const m = model();
+  m.replaceWithPlaylist('PLx', [v(B), v(C)], C, 0);
+  assert.equal(m.extendPlaylist('PLx', [v(A), v(B), v(C), v(D)]), true);
+  assert.deepEqual(ids(m), [A, B, C, D]);
+  assert.equal(currentId(m), C);
+});
+
+test('extendPlaylist is a no-op after the queue moved on', () => {
+  const m = model();
+  m.replaceWithPlaylist('PLx', [v(B), v(C)], B, 0);
+  m.replaceWithPlaylist('PLy', [v(D)], D, 0);
+  assert.equal(m.extendPlaylist('PLx', [v(A), v(B), v(C)]), false);
+  assert.deepEqual(ids(m), [D]);
+});
+
+
+test('adoptPlaying makes the playing video current when the queue is empty', () => {
+  const m = model();
+  m.adoptPlaying({ videoId: A, timeSec: 12, title: 'Now' });
+  assert.deepEqual(ids(m), [A]);
+  assert.equal(currentId(m), A);
+  assert.equal(m.state().items[0].title, 'Now');
+  m.adoptPlaying({ videoId: B, timeSec: 0 });
+  assert.deepEqual(ids(m), [A]); // a non-empty queue is left alone
+});
+
+
+test('extendPlaylist is dropped if the queue changed since the fetch started', () => {
+  const m = model();
+  m.replaceWithPlaylist('PLx', [v(B), v(C)], B, 0);
+  const snapshot = m.playlistSnapshot();
+  m.add(v(E)); // user edits while the rest of the playlist loads
+  assert.equal(m.extendPlaylist('PLx', [v(A), v(B), v(C), v(D)], snapshot), false);
+  assert.deepEqual(ids(m), [B, C, E]);
+});
+
+test('extendPlaylist keeps the playhead on the right copy of a repeated video', () => {
+  const m = model();
+  m.replaceWithPlaylist('PLx', [v(B), v(C), v(B)], B, 0);
+  m.jump(m.state().items[2].uid); // the second B
+  const snapshot = m.playlistSnapshot();
+  assert.equal(m.extendPlaylist('PLx', [v(B), v(C), v(B), v(D)], snapshot), true);
+  assert.equal(m.state().current, 2);
+});

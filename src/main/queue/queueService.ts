@@ -1,8 +1,16 @@
 import { ipcMain, IpcMainEvent, WebContents } from 'electron';
 import { HistoryStore } from '../history/historyStore';
-import { Command, NewItem, Playing, QueueModel } from './model';
+import { FetchBridge } from './fetchBridge';
+import { Command, NewItem, Playing, QueueModel, ShuffleSource } from './model';
 import { QueueStore } from './queueStore';
+import { isWatched, shouldFetchRestOfPlaylist } from './shuffle';
+import { ShuffleRunner } from './shuffleRunner';
 import { PageEvent, sanitiseItem, validateEvent } from './validate';
+
+export type QueueSettings = { batchSize: number; watchedPercent: number };
+
+const FULL_PLAYLIST_MAX = 500;
+const FULL_PLAYLIST_MAX_PAGES = 10;
 
 export type QueuePayload = { state: ReturnType<QueueModel['state']>; nextVideoId: string | null; command: Command; seq: number };
 
@@ -14,13 +22,25 @@ export class QueueService {
   private playing: Playing | null = null;
   private lastFrom: Playing | null = null;
   private autoplay: NewItem | null = null;
+  private readonly bridge: FetchBridge;
+  private readonly runner: ShuffleRunner;
 
   constructor(
     private readonly model: QueueModel,
     private readonly store: QueueStore,
     private readonly history: HistoryStore,
     private readonly fetchJson: (url: string) => Promise<any>,
-  ) {}
+    // Re-read on every refill so changes in Settings apply without a restart.
+    private readonly settings: () => QueueSettings = () => ({ batchSize: 10, watchedPercent: 80 }),
+  ) {
+    this.bridge = new FetchBridge((req) => {
+      if (this.wc && !this.wc.isDestroyed()) this.wc.send('queue:fetch', req);
+    });
+    this.runner = new ShuffleRunner(
+      (endpoint, body) => this.bridge.request(endpoint, body),
+      (c) => isWatched(c, this.history, this.settings().watchedPercent),
+    );
+  }
 
   attach(wc: WebContents): void {
     this.wc = wc;
@@ -34,7 +54,9 @@ export class QueueService {
       this.handle(ev);
     });
     ipcMain.on('queue:ready', (event) => {
-      if (this.fromYouTube(event)) this.publish(null);
+      if (!this.fromYouTube(event)) return;
+      this.publish(null);
+      this.refill(); // after a restart, top up only if needed
     });
   }
 
@@ -83,9 +105,65 @@ export class QueueService {
     if (this.autoplay?.videoId === videoId) this.autoplay = item;
   }
 
+  // Top the queue up from the shuffle source when it runs low (a no-op otherwise).
+  private refill(force = false): void {
+    const before = JSON.stringify(this.model.state());
+    this.runner
+      .refill(this.model, this.settings().batchSize, { force })
+      .then(() => {
+        if (JSON.stringify(this.model.state()) !== before) this.commit(null);
+      })
+      .catch((err) => console.warn(`[shuffle] refill failed: ${(err as Error).message}`));
+  }
+
+  private applyShuffle(ev: Extract<PageEvent, { type: 'shuffle' }>): void {
+    const current = this.model.state().shuffle;
+    let next: ShuffleSource | null = null;
+    if (ev.action === 'topic') next = { kind: 'topic', query: ev.query! };
+    else if (ev.action === 'creator') next = { kind: 'creators', creators: [{ channelId: ev.channelId!, name: ev.name ?? '' }] };
+    else if (ev.action === 'addCreator') {
+      const existing = current?.kind === 'creators' ? current.creators : [];
+      const creators = existing.some((c) => c.channelId === ev.channelId)
+        ? existing
+        : [...existing, { channelId: ev.channelId!, name: ev.name ?? '' }].slice(0, 20);
+      next = { kind: 'creators', creators };
+    }
+    this.model.setShuffle(next);
+    // Shuffling from an empty queue while watching: that video becomes the current item.
+    const playing = this.watching();
+    if (next && playing) this.model.adoptPlaying(playing);
+  }
+
+  // YouTube sends only a ~25-item window of a playlist; fetch the rest (up to 500).
+  private async fetchFullPlaylist(listId: string, snapshot: string): Promise<void> {
+    const items: NewItem[] = [];
+    let body: object = { browseId: 'VL' + listId };
+    try {
+      for (let pages = 0; pages < FULL_PLAYLIST_MAX_PAGES && items.length < FULL_PLAYLIST_MAX; pages++) {
+        const page = await this.bridge.request('browse', body);
+        for (const { watchedPercent: _w, ...item } of page.items) items.push(item);
+        if (!page.continuation) break;
+        body = { continuation: page.continuation };
+      }
+    } catch (err) {
+      console.warn(`[queue] full playlist fetch failed: ${(err as Error).message}`);
+    }
+    // A late result for a queue you've since replaced or edited is dropped by the model.
+    if (items.length > 0 && this.model.extendPlaylist(listId, items.slice(0, FULL_PLAYLIST_MAX), snapshot)) this.commit(null);
+    else if (items.length > 0) console.log(`[queue] dropped the full playlist ${listId}: the queue changed while it loaded`);
+  }
+
   handle(ev: PageEvent): void {
     let command: Command = null;
     switch (ev.type) {
+      case 'fetched':
+        this.bridge.resolve(ev);
+        return;
+      case 'shuffle':
+        this.applyShuffle(ev);
+        this.commit(null);
+        this.refill(true); // an explicit pick adds a batch right away
+        return;
       case 'navigated':
         this.lastFrom = ev.from;
         this.autoplay = null;
@@ -104,7 +182,13 @@ export class QueueService {
           if (ev.autoplay.title === ev.autoplay.videoId) this.fillAutoplayTitle(ev.autoplay.videoId);
         }
         if (ev.playlist && ev.listParam === ev.playlist.playlistId) {
+          const before = this.model.state().sourceListId;
           this.model.replaceWithPlaylist(ev.listParam, ev.playlist.items, ev.videoId, this.lastFrom?.timeSec ?? 0);
+          const meta = ev.playlistMeta;
+          const replaced = before !== ev.listParam && this.model.state().sourceListId === ev.listParam;
+          const wantsRest = replaced && shouldFetchRestOfPlaylist(meta, ev.playlist.items.length);
+          console.log(`[queue] playlist ${ev.listParam}: ${ev.playlist.items.length} of ${meta?.totalVideos ?? '?'} sent${meta?.isInfinite ? ' (endless mix)' : ''}${wantsRest ? '; fetching the rest' : ''}`);
+          if (wantsRest) this.fetchFullPlaylist(ev.listParam, this.model.playlistSnapshot());
         }
         break;
       case 'action': {
@@ -125,6 +209,8 @@ export class QueueService {
         break;
     }
     this.commit(command);
+    // Skipping ahead (navigated) uses up the queue too.
+    if (ev.type === 'ended' || ev.type === 'action' || ev.type === 'navigated') this.refill();
   }
 
   // Losing the queue counts as breakage: save first, then tell the page.

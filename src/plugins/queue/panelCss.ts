@@ -40,4 +40,21 @@ ytd-miniplayer #playlist, ytd-miniplayer ytd-playlist-panel-renderer { display: 
   cursor: pointer; font-size: 14px; line-height: 28px;
 }
 .ttd-q-actions button:hover { background: var(--yt-spec-10-percent-layer, rgba(255,255,255,.15)); }
+.ttd-shuffle-menu { display: flex; flex-direction: column; padding: 6px 8px; gap: 2px; border-bottom: 1px solid var(--yt-spec-10-percent-layer, rgba(255,255,255,.1)); }
+.ttd-shuffle-menu button {
+  text-align: left; border: 0; background: transparent; color: inherit; padding: 8px 10px; border-radius: 8px;
+  font: 400 13px Roboto, Arial, sans-serif; cursor: pointer;
+}
+.ttd-shuffle-menu button:hover { background: var(--yt-spec-10-percent-layer, rgba(255,255,255,.1)); }
+.ttd-shuffle-topic {
+  margin: 4px 2px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--yt-spec-10-percent-layer, rgba(255,255,255,.2));
+  background: var(--yt-spec-base-background, #0f0f0f); color: inherit; font: 400 13px Roboto, Arial, sans-serif;
+}
+.ttd-shuffle-chip {
+  display: flex; align-items: center; gap: 8px; margin: 8px 16px 4px; padding: 6px 6px 6px 12px; border-radius: 16px;
+  background: rgba(255, 59, 48, .14); font-size: 12px; width: fit-content; max-width: calc(100% - 32px);
+}
+.ttd-shuffle-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ttd-shuffle-chip button { border: 0; background: transparent; color: inherit; cursor: pointer; border-radius: 50%; width: 22px; height: 22px; }
+.ttd-shuffle-chip button:hover { background: rgba(255,255,255,.15); }
 `;

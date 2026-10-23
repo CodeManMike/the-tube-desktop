@@ -155,3 +155,18 @@ test('capture registers itself so the page script can run it on in-app navigatio
   assert.equal(g.__ttdLastWatchData.videoId, ID('w'));
   delete g.__ttdCaptureWatch;
 });
+
+test('capture records the creator and the playlist size', () => {
+  const data = watchResponse(ID('w')) as any;
+  data.contents.twoColumnWatchNextResults.results = { results: { contents: [
+    { videoPrimaryInfoRenderer: {} },
+    { videoSecondaryInfoRenderer: { owner: { videoOwnerRenderer: {
+      title: { runs: [{ text: 'Rick Astley' }] },
+      navigationEndpoint: { browseEndpoint: { browseId: 'UCuAXFkgsw1L7xaCfnd5JJOw' } },
+    } } } },
+  ] } };
+  data.contents.twoColumnWatchNextResults.playlist.playlist.totalVideos = 76;
+  capturePlaylistAndAutoplay(data, {});
+  assert.deepEqual(g.__ttdLastWatchData.owner, { channelId: 'UCuAXFkgsw1L7xaCfnd5JJOw', name: 'Rick Astley' });
+  assert.deepEqual(g.__ttdLastWatchData.playlistMeta, { totalVideos: 76, isInfinite: false });
+});

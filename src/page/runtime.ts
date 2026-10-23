@@ -7,6 +7,7 @@ export type RuntimeEntry = {
   transforms: Partial<Record<string, ((data: any, settings: Record<string, unknown>) => any) | ((data: any, settings: Record<string, unknown>) => any)[]>>;
   css: string | null;
   script: ((settings: Record<string, unknown>) => void) | null;
+  functions?: Record<string, Function>;
 };
 
 export function pageRuntime(entries: RuntimeEntry[]): void {
@@ -16,6 +17,10 @@ export function pageRuntime(entries: RuntimeEntry[]): void {
   const MAX_FAILURES = 3;
   type Fn = (data: any, settings: Record<string, unknown>) => any;
   type Live = { id: string; settings: Record<string, unknown>; fns: Record<string, Fn | Fn[]>; failures: number; off: boolean };
+
+  // Plugins' page helpers, for their page scripts to call.
+  const fns = ((globalThis as any).__ttdFns ??= {});
+  for (const e of entries) Object.assign(fns, e.functions ?? {});
 
   const live: Live[] = entries.map((e) => ({
     id: e.id,

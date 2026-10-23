@@ -7,9 +7,11 @@ import { PageEntry } from '../shared/plugin';
 export function buildPageBundle(entries: PageEntry[]): string {
   const literal = entries.map((e) => {
     const transforms = Object.entries(e.transforms).map(([endpoint, src]) => `${JSON.stringify(endpoint)}:${src}`);
+    const functions = Object.entries(e.functions ?? {}).map(([name, src]) => `${JSON.stringify(name)}:${src}`);
     return (
       `{id:${JSON.stringify(e.id)},settings:${JSON.stringify(e.settings)},` +
-      `css:${JSON.stringify(e.css ?? null)},script:${e.script ?? 'null'},transforms:{${transforms.join(',')}}}`
+      `css:${JSON.stringify(e.css ?? null)},script:${e.script ?? 'null'},` +
+      `transforms:{${transforms.join(',')}},functions:{${functions.join(',')}}}`
     );
   });
   return `(${pageRuntime.toString()})([${literal.join(',')}]);`;
