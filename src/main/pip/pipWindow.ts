@@ -61,6 +61,11 @@ export class PipWindow {
     return this.win !== null;
   }
 
+  // For IPC that both windows may use (SponsorBlock lookups).
+  ownsSender(wc: Electron.WebContents): boolean {
+    return !!this.win && !this.win.isDestroyed() && wc === this.win.webContents;
+  }
+
   private fromPip(event: IpcMainEvent): boolean {
     const ok = !!this.win && event.sender === this.win.webContents && /^https:\/\/www\.youtube\.com\//.test(event.senderFrame?.url ?? '');
     if (!ok) console.warn(`[pip] ignored a message from an unexpected sender: ${event.senderFrame?.url ?? 'unknown'}`);

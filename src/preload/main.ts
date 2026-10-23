@@ -21,3 +21,8 @@ if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('tt
     open: () => ipcRenderer.send('pip:open'),
   },
 });
+
+// SponsorBlock segments for the skipping plugin (main window and PiP alike).
+if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('ttdSkip', {
+  segments: (videoId: string) => ipcRenderer.invoke('skip:segments', videoId),
+});

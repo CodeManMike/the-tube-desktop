@@ -14,6 +14,7 @@ import { QueueModel } from './queue/model';
 import { QueueService } from './queue/queueService';
 import { QueueStore } from './queue/queueStore';
 import { PipWindow } from './pip/pipWindow';
+import { SponsorBlockClient } from './skip/sponsorBlock';
 
 const ICON = path.join(app.getAppPath(), 'assets', 'icons', 'favicon.ico');
 const HOME = 'https://www.youtube.com';
@@ -184,6 +185,23 @@ if (isPrimary) app.whenReady().then(async () => {
   ipcMain.on('pip:open', (event) => {
     if (event.sender !== mainWindow?.webContents || !/^https:\/\/www\.youtube\.com\//.test(event.senderFrame?.url ?? '')) return;
     pipWindow?.open();
+  });
+  // SponsorBlock lookups for the main window and PiP (plugins/sponsorBlock.ts). Made here,
+  // on the default session, so no YouTube cookies go with them.
+  const sponsorBlock = new SponsorBlockClient(async (url) => {
+    const res = await net.fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (res.status === 404) return []; // SponsorBlock's answer for "nothing in this bucket"
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  });
+  ipcMain.handle('skip:segments', (event, videoId: unknown) => {
+    const fromApp = event.sender === mainWindow?.webContents || !!pipWindow?.ownsSender(event.sender);
+    const fromYouTube = /^https:\/\/www\.youtube\.com\//.test(event.senderFrame?.url ?? '');
+    if (!fromApp || !fromYouTube || typeof videoId !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+      console.warn('[sponsorblock] ignored an invalid lookup request');
+      return [];
+    }
+    return sponsorBlock.segments(videoId);
   });
   setInterval(() => history.flush(), 30_000);
   app.on('before-quit', () => queueService?.flush());
