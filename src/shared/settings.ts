@@ -4,6 +4,8 @@ export type SettingDef = {
   type: 'boolean' | 'number' | 'enum' | 'stringList';
   default: unknown;
   options?: string[];
+  // A tooltip (ⓘ) for what the user can't see but needs to know; most settings have none.
+  hint?: string;
   // Shown instead of the raw option value on the settings page.
   optionLabels?: Record<string, string>;
   min?: number;

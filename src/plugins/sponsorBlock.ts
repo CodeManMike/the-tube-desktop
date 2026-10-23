@@ -4,15 +4,15 @@ import { decideSkip } from './skip/decide';
 import { ttdNotice } from './skip/notice';
 
 const ACTION_LABELS = { auto: 'Skip automatically', button: 'Show a skip button', notify: 'Notify only', ignore: 'Ignore' };
-const CATEGORIES: [key: string, label: string, def: string][] = [
+const CATEGORIES: [key: string, label: string, def: string, hint?: string][] = [
   ['sponsor', 'Sponsor', 'auto'],
   ['selfpromo', 'Self-promotion', 'auto'],
-  ['interaction', 'Interaction reminder', 'auto'],
+  ['interaction', 'Interaction reminder', 'auto', 'Reminders to like, subscribe or follow.'],
   ['intro', 'Intro', 'button'],
   ['outro', 'Outro / end cards', 'button'],
-  ['preview', 'Preview / recap', 'button'],
-  ['filler', 'Filler', 'ignore'],
-  ['music_offtopic', 'Music: non-music section', 'auto'],
+  ['preview', 'Preview / recap', 'button', "Clips of what's coming up or what happened before."],
+  ['filler', 'Filler', 'ignore', "Tangents that aren't needed to follow the video."],
+  ['music_offtopic', 'Non-music section', 'auto', 'Talking or skits in music videos.'],
 ];
 
 // Watches the <video> and acts on the current video's SponsorBlock segments (looked up by
@@ -164,11 +164,12 @@ export const sponsorBlock: Plugin = {
   manifest: {
     id: 'sponsorBlock',
     name: 'SponsorBlock',
-    description: 'Skips sponsor reads and other segments marked by the SponsorBlock community. Only a short hash of the video id is sent.',
+    hint: 'Segments come from the SponsorBlock community. Only a short hash of the video ID is sent.',
     defaultEnabled: true,
-    settings: CATEGORIES.map(([key, label, def]): SettingDef => ({
+    settings: CATEGORIES.map(([key, label, def, hint]): SettingDef => ({
       key,
       label,
+      ...(hint && { hint }),
       type: 'enum',
       default: def,
       options: Object.keys(ACTION_LABELS),

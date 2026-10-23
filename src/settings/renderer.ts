@@ -1,7 +1,7 @@
 // Settings page script. Kept free of imports so tsc emits a plain browser script.
-type Def = { key: string; label: string; type: 'boolean' | 'number' | 'enum' | 'stringList'; options?: string[]; optionLabels?: Record<string, string>; min?: number; max?: number };
+type Def = { key: string; label: string; hint?: string; type: 'boolean' | 'number' | 'enum' | 'stringList'; options?: string[]; optionLabels?: Record<string, string>; min?: number; max?: number };
 type Item = {
-  manifest: { id: string; name: string; description: string; settings: Def[] };
+  manifest: { id: string; name: string; hint?: string; settings: Def[] };
   enabled: boolean;
   values: Record<string, unknown>;
 };
@@ -17,6 +17,14 @@ function el<T extends HTMLElement = HTMLElement>(tag: string, props: Record<stri
   const node = Object.assign(document.createElement(tag), props) as T;
   node.append(...children);
   return node;
+}
+
+// A tooltip for what the user can't see but needs to know; reachable by keyboard too.
+function hintIcon(text?: string): Node[] {
+  if (!text) return [];
+  const i = el('span', { className: 'hint', textContent: 'i', title: text, tabIndex: 0 });
+  i.setAttribute('aria-label', text);
+  return [i];
 }
 
 function control(id: string, def: Def, value: unknown): HTMLElement {
@@ -52,11 +60,11 @@ function control(id: string, def: Def, value: unknown): HTMLElement {
       break;
     }
   }
-  return el('div', { className: 'field' }, el('label', { htmlFor: inputId, textContent: def.label }), input);
+  return el('div', { className: 'field' }, el('div', { className: 'label' }, el('label', { htmlFor: inputId, textContent: def.label }), ...hintIcon(def.hint)), input);
 }
 
 function card(item: Item): HTMLElement {
-  const { id, name, description, settings } = item.manifest;
+  const { id, name, hint, settings } = item.manifest;
   const toggle = el<HTMLInputElement>('input', { type: 'checkbox', checked: item.enabled });
   toggle.setAttribute('aria-label', `Enable ${name}`);
   const root = el(
@@ -65,7 +73,7 @@ function card(item: Item): HTMLElement {
     el(
       'div',
       { className: 'head' },
-      el('div', { className: 'text' }, el('div', { className: 'name', textContent: name }), el('div', { className: 'desc', textContent: description })),
+      el('div', { className: 'text' }, el('div', { className: 'name' }, document.createTextNode(name), ...hintIcon(hint))),
       el('label', { className: 'switch' }, toggle, el('span')),
     ),
     el('div', { className: 'fields' }, ...settings.map((def) => control(id, def, item.values[def.key]))),

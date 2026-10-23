@@ -36,7 +36,6 @@ export const hideShorts: Plugin = {
   manifest: {
     id: 'hideShorts',
     name: 'Hide Shorts',
-    description: 'Removes Shorts shelves and Shorts items from feeds, search, the watch sidebar and the guide.',
     defaultEnabled: true,
     settings: [],
   },

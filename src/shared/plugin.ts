@@ -11,7 +11,10 @@ export type Transform = (data: any, settings: Record<string, unknown>) => any;
 export type PluginManifest = {
   id: string;
   name: string;
-  description: string;
+  // Only for test plugins; shipped plugins say what they are by name (see hint).
+  description?: string;
+  // A tooltip (ⓘ) for what the user can't see but needs to know.
+  hint?: string;
   defaultEnabled: boolean;
   settings: SettingDef[];
 };

@@ -8,11 +8,10 @@ export const queue: Plugin = {
   manifest: {
     id: 'queue',
     name: 'Queue',
-    description: 'Keeps your queue across navigation and restarts, with detours you can return from.',
     defaultEnabled: true,
     settings: [
-      { key: 'batchSize', label: 'Shuffle adds this many videos at a time', type: 'number', default: 10, min: 5, max: 25 },
-      { key: 'watchedPercent', label: 'Count a video as watched at (%)', type: 'number', default: 80, min: 50, max: 100 },
+      { key: 'batchSize', label: 'Shuffle batch size', type: 'number', default: 10, min: 5, max: 25 },
+      { key: 'watchedPercent', label: 'Counts as watched at (%)', hint: 'Used by shuffle and Hide watched.', type: 'number', default: 80, min: 50, max: 100 },
     ],
   },
   // Capture runs before the autoplay redirect so it records YouTube's real pick.

@@ -64,7 +64,7 @@ export const adSkip: Plugin = {
   manifest: {
     id: 'adSkip',
     name: 'Ad skip',
-    description: 'A fallback for when YouTube Premium does not remove ads: strips ad placements and skips anything that still plays.',
+    hint: "Only matters when YouTube Premium isn't removing ads.",
     defaultEnabled: true,
     settings: [
       {
