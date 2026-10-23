@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain, IpcMainEvent, screen } from 'electron';
 import path from 'path';
 import { pipEntry } from '../../pip/page';
+import { PageEntry } from '../../shared/plugin';
 import { PARTITION } from '../config';
 import { attachPageBundle } from '../pageBundle';
 import { Playing } from '../queue/model';
@@ -40,6 +41,8 @@ export class PipWindow {
     private readonly queue: QueueService,
     private readonly store: SettingsStore,
     private readonly icon: string,
+    // Plugins that also run in PiP (e.g. skipping); see PluginRegistry.pageEntries('pip').
+    private readonly pluginEntries: () => PageEntry[] = () => [],
   ) {
     ipcMain.on('pip:event', (event, raw) => {
       if (!this.fromPip(event)) return;
@@ -56,6 +59,11 @@ export class PipWindow {
 
   isOpen(): boolean {
     return this.win !== null;
+  }
+
+  // For IPC that both windows may use (SponsorBlock lookups).
+  ownsSender(wc: Electron.WebContents): boolean {
+    return !!this.win && !this.win.isDestroyed() && wc === this.win.webContents;
   }
 
   private fromPip(event: IpcMainEvent): boolean {
@@ -188,7 +196,7 @@ export class PipWindow {
       });
 
       this.devHook(win);
-      await attachPageBundle(win.webContents, () => [pipEntry()]);
+      await attachPageBundle(win.webContents, () => [pipEntry(), ...this.pluginEntries()]);
       this.queue.setPlayer({ webContents: win.webContents, navigate: (cmd) => this.send(cmd) }, () => this.dismiss());
       console.log(`[pip] open ${at.videoId} at ${at.timeSec.toFixed(1)}s`);
       win.loadURL(`https://www.youtube.com/watch?v=${at.videoId}&t=${Math.floor(at.timeSec)}s`).catch(() => {});
@@ -210,7 +218,8 @@ export class PipWindow {
     win.webContents.on('console-message', async (event: any, _level?: number, legacy?: string) => {
       const m = String(event.message ?? legacy ?? '').match(/^\[ttd-dev\] capture ([\w-]+)$/);
       if (!m || win.isDestroyed()) return;
-      fs.writeFileSync(path.join(path.dirname(file), `${m[1]}.png`), (await win.webContents.capturePage()).toPNG());
+      const shot = await win.webContents.capturePage().catch((err: Error) => console.warn('[dev-capture] failed:', err.message));
+      if (shot) fs.writeFileSync(path.join(path.dirname(file), `${m[1]}.png`), shot.toPNG());
       console.log('[dev-capture]', m[1]);
     });
     win.webContents.on('did-finish-load', async () => {

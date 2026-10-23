@@ -81,3 +81,15 @@ test('page functions are serialised by name', () => {
   const [entry] = new PluginRegistry([p], store()).pageEntries();
   assert.equal(new Function('return ' + entry.functions!.double)()(4), 8);
 });
+
+test('pip entries include only plugins that declare pip', () => {
+  const reg = new PluginRegistry([plugin('a'), plugin('b', { contexts: ['main', 'pip'] }), plugin('c', { contexts: ['pip'] })], store());
+  assert.deepEqual(reg.pageEntries('pip').map((e) => e.id), ['b', 'c']);
+  assert.deepEqual(reg.pageEntries().map((e) => e.id), ['a', 'b']);
+});
+
+test('a plugin disabled for the session is left out of pip entries too', () => {
+  const reg = new PluginRegistry([plugin('b', { contexts: ['main', 'pip'] })], store());
+  reg.disableForSession('b');
+  assert.deepEqual(reg.pageEntries('pip'), []);
+});
