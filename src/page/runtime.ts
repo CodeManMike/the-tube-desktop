@@ -8,6 +8,8 @@ export type RuntimeEntry = {
   css: string | null;
   script: ((settings: Record<string, unknown>) => void) | null;
   functions?: Record<string, Function>;
+  // Runs at once, before YouTube's own scripts (e.g. to change what codecs the page sees).
+  early?: ((settings: Record<string, unknown>) => void) | null;
 };
 
 export function pageRuntime(entries: RuntimeEntry[]): void {
@@ -21,6 +23,15 @@ export function pageRuntime(entries: RuntimeEntry[]): void {
   // Plugins' page helpers, for their page scripts to call.
   const fns = ((globalThis as any).__ttdFns ??= {});
   for (const e of entries) Object.assign(fns, e.functions ?? {});
+
+  for (const e of entries) {
+    if (!e.early) continue;
+    try {
+      e.early(e.settings);
+    } catch (err) {
+      console.warn(`[ttd] ${e.id} early script failed: ${(err as Error).message}`);
+    }
+  }
 
   const live: Live[] = entries.map((e) => ({
     id: e.id,

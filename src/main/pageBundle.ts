@@ -10,7 +10,7 @@ export function buildPageBundle(entries: PageEntry[]): string {
     const functions = Object.entries(e.functions ?? {}).map(([name, src]) => `${JSON.stringify(name)}:${src}`);
     return (
       `{id:${JSON.stringify(e.id)},settings:${JSON.stringify(e.settings)},` +
-      `css:${JSON.stringify(e.css ?? null)},script:${e.script ?? 'null'},` +
+      `css:${JSON.stringify(e.css ?? null)},script:${e.script ?? 'null'},early:${e.early ?? 'null'},` +
       `transforms:{${transforms.join(',')}},functions:{${functions.join(',')}}}`
     );
   });

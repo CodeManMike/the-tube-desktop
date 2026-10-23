@@ -44,6 +44,7 @@ export class PluginRegistry {
         transforms,
         css: p.css,
         script: p.pageScript && asExpression(p.pageScript),
+        early: p.earlyScript && asExpression(p.earlyScript),
         ...(p.pageFunctions && {
           functions: Object.fromEntries(Object.entries(p.pageFunctions).map(([name, fn]) => [name, asExpression(fn)])),
         }),
