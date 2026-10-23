@@ -103,3 +103,12 @@ test('a failed write is logged, not thrown', () => {
   assert.doesNotThrow(() => store.setEnabled('a', false));
   assert.equal(store.isEnabled('a', true), false);
 });
+
+test('PiP state round-trips and a bad stored value reads as undefined', () => {
+  const file = tmpFile();
+  const store = new SettingsStore(file);
+  store.setPipState({ x: 1, y: 2, width: 480, height: 270, alwaysOnTop: false });
+  assert.deepEqual(new SettingsStore(file).getPipState(), { x: 1, y: 2, width: 480, height: 270, alwaysOnTop: false });
+  fs.writeFileSync(file, JSON.stringify({ plugins: {}, pip: { x: 'a' } }));
+  assert.equal(new SettingsStore(file).getPipState(), undefined);
+});

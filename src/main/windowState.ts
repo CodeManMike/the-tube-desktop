@@ -22,6 +22,14 @@ function fit(rect: Rect, area: Rect): Rect {
   };
 }
 
+// Whether at least MIN_VISIBLE px each way of the rect is on some work area.
+export function visibleOnAny(rect: Rect, workAreas: Rect[]): boolean {
+  return workAreas.some((area) => {
+    const o = overlap(rect, area);
+    return o.w >= MIN_VISIBLE && o.h >= MIN_VISIBLE;
+  });
+}
+
 // Restore the saved window unless the monitor it was on is gone (or it would be
 // mostly off-screen): then centre the fallback size on the first work area.
 export function restoreBounds(saved: WindowState | undefined, workAreas: Rect[], fallback: Rect): Rect {

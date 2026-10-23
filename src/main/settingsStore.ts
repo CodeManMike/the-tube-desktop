@@ -5,7 +5,8 @@ import { writeFileAtomic } from './atomicFile';
 export type WindowState = { x: number; y: number; width: number; height: number; maximized: boolean };
 
 type PluginState = { enabled?: boolean; values?: Record<string, unknown> };
-type SettingsFile = { plugins: Record<string, PluginState>; window?: WindowState };
+export type PipState = { x: number; y: number; width: number; height: number; alwaysOnTop: boolean };
+type SettingsFile = { plugins: Record<string, PluginState>; window?: WindowState; pip?: PipState };
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -15,6 +16,13 @@ function validWindowState(v: unknown): WindowState | undefined {
   const { x, y, width, height, maximized } = v;
   const nums = [x, y, width, height].every((n) => typeof n === 'number' && Number.isFinite(n));
   return nums && typeof maximized === 'boolean' ? (v as WindowState) : undefined;
+}
+
+function validPipState(v: unknown): PipState | undefined {
+  if (!isPlainObject(v)) return undefined;
+  const { x, y, width, height, alwaysOnTop } = v;
+  const nums = [x, y, width, height].every((n) => typeof n === 'number' && Number.isFinite(n));
+  return nums && typeof alwaysOnTop === 'boolean' ? ({ x, y, width, height, alwaysOnTop } as PipState) : undefined;
 }
 
 // Keep only well-formed entries, so a hand-edited file can never wedge later writes.
@@ -28,7 +36,7 @@ function sanitise(parsed: unknown): SettingsFile {
       ...(isPlainObject(entry.values) && { values: entry.values }),
     };
   }
-  return { plugins, window: validWindowState(parsed.window) };
+  return { plugins, window: validWindowState(parsed.window), pip: validPipState(parsed.pip) };
 }
 
 export class SettingsStore {
@@ -83,6 +91,15 @@ export class SettingsStore {
 
   setWindowState(state: WindowState): void {
     this.data.window = state;
+    this.save();
+  }
+
+  getPipState(): PipState | undefined {
+    return this.data.pip;
+  }
+
+  setPipState(state: PipState): void {
+    this.data.pip = state;
     this.save();
   }
 }
