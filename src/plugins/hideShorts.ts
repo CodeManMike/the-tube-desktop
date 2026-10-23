@@ -13,7 +13,18 @@ function hideShortsTransform(data: any, _settings: Record<string, unknown>): any
     if (section && section.reelShelfRenderer) return true;
     const shelf = section && section.richShelfRenderer;
     if (shelf && shelf.isShorts) return true;
-    return !!(shelf && Array.isArray(shelf.contents) && shelf.contents.length > 0 && shelf.contents.every(isShortsItem));
+    if (shelf && Array.isArray(shelf.contents) && shelf.contents.length > 0 && shelf.contents.every(isShortsItem)) return true;
+    // Search shows Shorts as a grid shelf. Remove it when it holds Shorts and no normal video,
+    // wherever in the grid they sit.
+    return !!el.gridShelfViewModel && contains(el.gridShelfViewModel, SHORT) && !contains(el.gridShelfViewModel, VIDEO);
+  }
+
+  const SHORT = ['shortsLockupViewModel', 'reelItemRenderer'];
+  const VIDEO = ['videoRenderer', 'lockupViewModel', 'compactVideoRenderer'];
+  function contains(node: any, keys: string[]): boolean {
+    if (!node || typeof node !== 'object') return false;
+    if (Array.isArray(node)) return node.some((n) => contains(n, keys));
+    return Object.keys(node).some((k) => keys.includes(k) || contains(node[k], keys));
   }
 
   function walk(node: any): void {
