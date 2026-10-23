@@ -112,3 +112,12 @@ test('PiP state round-trips and a bad stored value reads as undefined', () => {
   fs.writeFileSync(file, JSON.stringify({ plugins: {}, pip: { x: 'a' } }));
   assert.equal(new SettingsStore(file).getPipState(), undefined);
 });
+
+import { validateSetting } from '../shared/settings';
+
+test('a text setting keeps strings up to maxLength and falls back otherwise', () => {
+  const def = { key: 'css', label: 'CSS', type: 'text' as const, default: '', maxLength: 10 };
+  assert.equal(validateSetting(def, 'a { }'), 'a { }');
+  assert.equal(validateSetting(def, 'x'.repeat(11)), '');
+  assert.equal(validateSetting(def, 42), '');
+});

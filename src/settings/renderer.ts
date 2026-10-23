@@ -1,5 +1,5 @@
 // Settings page script. Kept free of imports so tsc emits a plain browser script.
-type Def = { key: string; label: string; hint?: string; type: 'boolean' | 'number' | 'enum' | 'stringList'; options?: string[]; optionLabels?: Record<string, string>; min?: number; max?: number };
+type Def = { key: string; label: string; hint?: string; type: 'boolean' | 'number' | 'enum' | 'stringList' | 'text'; maxLength?: number; options?: string[]; optionLabels?: Record<string, string>; min?: number; max?: number };
 type Item = {
   manifest: { id: string; name: string; hint?: string; settings: Def[] };
   enabled: boolean;
@@ -51,6 +51,13 @@ function control(id: string, def: Def, value: unknown): HTMLElement {
       for (const opt of def.options ?? []) sel.append(el('option', { value: opt, textContent: def.optionLabels?.[opt] ?? opt, selected: opt === value }));
       sel.addEventListener('change', () => save(sel.value));
       input = sel;
+      break;
+    }
+    case 'text': {
+      const area = el<HTMLTextAreaElement>('textarea', { id: inputId, value: String(value ?? ''), className: 'code', spellcheck: false });
+      if (def.maxLength) area.maxLength = def.maxLength;
+      area.addEventListener('change', () => save(area.value));
+      input = area;
       break;
     }
     case 'stringList': {
