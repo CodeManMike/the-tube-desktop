@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, components, net, screen, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, components, net, screen, session, shell } from 'electron';
 import path from 'path';
 import { PARTITION } from './config';
 import { migrateLegacyProfile } from './migrate';
@@ -16,6 +16,7 @@ import { QueueStore } from './queue/queueStore';
 import { PipWindow } from './pip/pipWindow';
 import { SponsorBlockClient } from './skip/sponsorBlock';
 import { createPlayerControls } from './desktop/playerControls';
+import { SignInWatcher } from './account/signInWatcher';
 import { RydClient } from './ryd';
 
 const ICON = path.join(app.getAppPath(), 'assets', 'icons', 'favicon.ico');
@@ -259,6 +260,33 @@ if (isPrimary) app.whenReady().then(async () => {
   setInterval(() => history.flush(), 30_000);
   app.on('before-quit', () => queueService?.flush());
 
+  // Sign-out detection (spec §2.1): one prompt when someone who was signed in gets signed out.
+  const SIGN_IN_URL =
+    'https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26next%3D%252F';
+  const signIn = new SignInWatcher({
+    wasSignedIn: store.getAccount().wasSignedIn,
+    save: (v) => store.setAccount({ wasSignedIn: v }),
+    hasSidCookie: async () => (await session.fromPartition(PARTITION).cookies.get({ domain: '.youtube.com', name: 'SID' })).length > 0,
+    prompt: async () => {
+      if (!mainWindow) return;
+      const { response } = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: 'The Tube Desktop',
+        message: "You've been signed out of YouTube",
+        buttons: ['Sign in', 'Reload', 'Not now'],
+        defaultId: 0,
+        cancelId: 2,
+        noLink: true,
+      });
+      if (response === 0) mainWindow?.loadURL(SIGN_IN_URL).catch(() => {});
+      else if (response === 1) mainWindow?.webContents.reload();
+      else signIn.dismissed();
+    },
+  });
+  session.fromPartition(PARTITION).cookies.on('changed', (_event, cookie, cause, removed) => {
+    if (removed && cause !== 'overwrite' && cookie.domain === '.youtube.com') signIn.cookieRemoved(cookie.name);
+  });
+
   // Diagnostic: is the saved session present, and does YouTube accept it?
   mainWindow.webContents.on('did-finish-load', async () => {
     const wc = mainWindow!.webContents;
@@ -270,6 +298,7 @@ if (isPrimary) app.whenReady().then(async () => {
       )
       .catch(() => ({ loggedIn: 'n/a', rewrite: 'n/a' }));
     console.log('[session]', wc.getURL(), 'SID cookies:', sid.length, 'LOGGED_IN:', page.loggedIn, 'rewrite active:', page.rewrite);
+    if (wc.getURL().startsWith('https://www.youtube.com/')) signIn.pageLoaded(typeof page.loggedIn === 'boolean' ? page.loggedIn : null);
   });
 
   // A plugin the page turned off after repeated failures stays off for this session.

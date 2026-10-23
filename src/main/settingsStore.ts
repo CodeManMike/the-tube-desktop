@@ -6,7 +6,7 @@ export type WindowState = { x: number; y: number; width: number; height: number;
 
 type PluginState = { enabled?: boolean; values?: Record<string, unknown> };
 export type PipState = { x: number; y: number; width: number; height: number; alwaysOnTop: boolean };
-type SettingsFile = { plugins: Record<string, PluginState>; window?: WindowState; pip?: PipState };
+type SettingsFile = { plugins: Record<string, PluginState>; window?: WindowState; pip?: PipState; account?: { wasSignedIn: boolean } };
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -36,7 +36,8 @@ function sanitise(parsed: unknown): SettingsFile {
       ...(isPlainObject(entry.values) && { values: entry.values }),
     };
   }
-  return { plugins, window: validWindowState(parsed.window), pip: validPipState(parsed.pip) };
+  const account = isPlainObject(parsed.account) && typeof parsed.account.wasSignedIn === 'boolean' ? { wasSignedIn: parsed.account.wasSignedIn } : undefined;
+  return { plugins, window: validWindowState(parsed.window), pip: validPipState(parsed.pip), account };
 }
 
 export class SettingsStore {
@@ -91,6 +92,16 @@ export class SettingsStore {
 
   setWindowState(state: WindowState): void {
     this.data.window = state;
+    this.save();
+  }
+
+  // Whether YouTube was signed in last time (sign-out detection).
+  getAccount(): { wasSignedIn: boolean } {
+    return this.data.account ?? { wasSignedIn: false };
+  }
+
+  setAccount(account: { wasSignedIn: boolean }): void {
+    this.data.account = account;
     this.save();
   }
 
