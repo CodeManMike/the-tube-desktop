@@ -18,3 +18,7 @@ test('stripAds passes unknown shapes through', () => {
   assert.deepEqual(stripAds({ a: 1 }), { a: 1 });
   assert.equal(stripAds(null), null);
 });
+
+test('stripAds leaves the data alone when ad skipping is off', () => {
+  assert.deepEqual(stripAds({ adPlacements: [1] }, { mode: 'off' }), { adPlacements: [1] });
+});
