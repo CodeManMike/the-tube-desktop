@@ -27,3 +27,10 @@ export function pickBatch(pool: Candidate[], exclude: Set<string>, n: number, ra
   }
   return eligible.slice(0, n).map(({ watchedPercent: _w, ...item }) => item);
 }
+
+// YouTube sends only a window of a playlist. Fetch the rest unless it's an endless Mix or
+// YouTube says the window already holds everything (some playlists don't report a size).
+export function shouldFetchRestOfPlaylist(meta: { totalVideos: number | null; isInfinite: boolean } | null, windowCount: number): boolean {
+  if (!meta || meta.isInfinite) return false;
+  return meta.totalVideos === null || meta.totalVideos > windowCount;
+}

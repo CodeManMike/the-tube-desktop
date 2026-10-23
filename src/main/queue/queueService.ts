@@ -3,7 +3,7 @@ import { HistoryStore } from '../history/historyStore';
 import { FetchBridge } from './fetchBridge';
 import { Command, NewItem, Playing, QueueModel, ShuffleSource } from './model';
 import { QueueStore } from './queueStore';
-import { isWatched } from './shuffle';
+import { isWatched, shouldFetchRestOfPlaylist } from './shuffle';
 import { ShuffleRunner } from './shuffleRunner';
 import { PageEvent, sanitiseItem, validateEvent } from './validate';
 
@@ -185,7 +185,7 @@ export class QueueService {
           this.model.replaceWithPlaylist(ev.listParam, ev.playlist.items, ev.videoId, this.lastFrom?.timeSec ?? 0);
           const meta = ev.playlistMeta;
           const replaced = before !== ev.listParam && this.model.state().sourceListId === ev.listParam;
-          const wantsRest = replaced && !!meta && !meta.isInfinite && (meta.totalVideos ?? 0) > ev.playlist.items.length;
+          const wantsRest = replaced && shouldFetchRestOfPlaylist(meta, ev.playlist.items.length);
           console.log(`[queue] playlist ${ev.listParam}: ${ev.playlist.items.length} of ${meta?.totalVideos ?? '?'} sent${meta?.isInfinite ? ' (endless mix)' : ''}${wantsRest ? '; fetching the rest' : ''}`);
           if (wantsRest) this.fetchFullPlaylist(ev.listParam);
         }

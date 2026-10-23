@@ -42,3 +42,14 @@ test('pickBatch is deterministic for a seeded random and strips watchedPercent',
   assert.deepEqual(a, b);
   assert.equal('watchedPercent' in a[0], false);
 });
+
+
+import { shouldFetchRestOfPlaylist } from '../main/queue/shuffle';
+
+test('fetch the rest of a playlist unless it is endless or YouTube says the window is complete', () => {
+  assert.equal(shouldFetchRestOfPlaylist({ totalVideos: 76, isInfinite: false }, 23), true);
+  assert.equal(shouldFetchRestOfPlaylist({ totalVideos: null, isInfinite: false }, 41), true); // size not reported
+  assert.equal(shouldFetchRestOfPlaylist({ totalVideos: 20, isInfinite: false }, 20), false);
+  assert.equal(shouldFetchRestOfPlaylist({ totalVideos: null, isInfinite: true }, 25), false); // a Mix
+  assert.equal(shouldFetchRestOfPlaylist(null, 25), false);
+});
