@@ -10,15 +10,15 @@ function pipButtonScript(): void {
     b.className = 'ytp-button ttd-pip-button';
     b.title = 'Picture-in-picture (Ctrl+Shift+P)';
     b.setAttribute('aria-label', 'Picture-in-picture');
+    // Same markup as the icons in YouTube's .ytp-right-controls-right group (settings,
+    // theatre, fullscreen): a fixed 24×24 SVG that the group's styles centre in the button.
     const svg = document.createElementNS(NS, 'svg');
-    // YouTube's own player icons are drawn in a 36×36 box; a 24-unit glyph centred in it matches them.
-    svg.setAttribute('viewBox', '0 0 36 36');
-    svg.setAttribute('width', '100%');
-    svg.setAttribute('height', '100%');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '24');
+    svg.setAttribute('height', '24');
     const path = document.createElementNS(NS, 'path');
     path.setAttribute('d', 'M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z');
     path.setAttribute('fill', '#fff');
-    path.setAttribute('transform', 'translate(6 6)');
     svg.appendChild(path);
     b.appendChild(svg);
     b.addEventListener('click', () => api.pip.open());
@@ -26,8 +26,11 @@ function pipButtonScript(): void {
   };
   // YouTube rebuilds the controls on some navigations; put the button back when it does.
   const ensure = () => {
+    // Newer players split the right controls into groups; join the right-hand group so the
+    // button is laid out like its neighbours. Older players have a single row.
     const controls = document.querySelector('#movie_player .ytp-right-controls');
-    if (controls && !controls.querySelector('.ttd-pip-button')) controls.prepend(make());
+    if (!controls || controls.querySelector('.ttd-pip-button')) return;
+    (controls.querySelector('.ytp-right-controls-right') ?? controls).prepend(make());
   };
   document.addEventListener('yt-navigate-finish', ensure);
   setInterval(ensure, 2000);
