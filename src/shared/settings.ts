@@ -4,6 +4,8 @@ export type SettingDef = {
   type: 'boolean' | 'number' | 'enum' | 'stringList';
   default: unknown;
   options?: string[];
+  // Shown instead of the raw option value on the settings page.
+  optionLabels?: Record<string, string>;
   min?: number;
   max?: number;
 };

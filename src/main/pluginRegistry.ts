@@ -1,4 +1,4 @@
-import { Endpoint, MainContext, PageEntry, Plugin, PluginManifest } from '../shared/plugin';
+import { Endpoint, MainContext, PageContext, PageEntry, Plugin, PluginManifest } from '../shared/plugin';
 import { SettingsStore } from './settingsStore';
 
 // Turn a function's source into an expression. Method shorthand
@@ -31,8 +31,9 @@ export class PluginRegistry {
     return this.plugins.map((p) => ({ manifest: p.manifest, enabled: this.enabled(p) }));
   }
 
-  pageEntries(): PageEntry[] {
-    return this.plugins.filter((p) => this.enabled(p) && !this.sessionDisabled.has(p.manifest.id)).map((p) => {
+  pageEntries(context: PageContext = 'main'): PageEntry[] {
+    const runsIn = (p: Plugin) => (p.contexts ?? ['main']).includes(context);
+    return this.plugins.filter((p) => runsIn(p) && this.enabled(p) && !this.sessionDisabled.has(p.manifest.id)).map((p) => {
       const transforms: Partial<Record<Endpoint, string>> = {};
       for (const [endpoint, fn] of Object.entries(p.transforms ?? {})) {
         transforms[endpoint as Endpoint] = Array.isArray(fn) ? `[${fn.map(asExpression).join(',')}]` : asExpression(fn);

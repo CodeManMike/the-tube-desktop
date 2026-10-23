@@ -1,5 +1,5 @@
 // Settings page script. Kept free of imports so tsc emits a plain browser script.
-type Def = { key: string; label: string; type: 'boolean' | 'number' | 'enum' | 'stringList'; options?: string[]; min?: number; max?: number };
+type Def = { key: string; label: string; type: 'boolean' | 'number' | 'enum' | 'stringList'; options?: string[]; optionLabels?: Record<string, string>; min?: number; max?: number };
 type Item = {
   manifest: { id: string; name: string; description: string; settings: Def[] };
   enabled: boolean;
@@ -40,7 +40,7 @@ function control(id: string, def: Def, value: unknown): HTMLElement {
     }
     case 'enum': {
       const sel = el<HTMLSelectElement>('select', { id: inputId });
-      for (const opt of def.options ?? []) sel.append(el('option', { value: opt, textContent: opt, selected: opt === value }));
+      for (const opt of def.options ?? []) sel.append(el('option', { value: opt, textContent: def.optionLabels?.[opt] ?? opt, selected: opt === value }));
       sel.addEventListener('change', () => save(sel.value));
       input = sel;
       break;

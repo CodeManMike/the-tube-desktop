@@ -18,8 +18,13 @@ export type PluginManifest = {
 
 export type MainContext = { mainWindow: BrowserWindow; store: SettingsStore; log: (msg: string) => void };
 
+// Where a plugin's page parts run: the main window, the PiP window, or both.
+export type PageContext = 'main' | 'pip';
+
 export type Plugin = {
   manifest: PluginManifest;
+  // Defaults to ['main']. Playback plugins (skipping) also declare 'pip'.
+  contexts?: PageContext[];
   // One transform, or several applied in order (each with its own fail-safe count).
   transforms?: Partial<Record<Endpoint, Transform | Transform[]>>;
   css?: string;

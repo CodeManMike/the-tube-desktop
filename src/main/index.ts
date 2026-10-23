@@ -179,7 +179,7 @@ if (isPrimary) app.whenReady().then(async () => {
     },
   );
   queueService.attach(mainWindow.webContents);
-  pipWindow = new PipWindow(mainWindow, queueService, store, ICON);
+  pipWindow = new PipWindow(mainWindow, queueService, store, ICON, () => registry.pageEntries('pip'));
   // The player's PiP button (plugins/pip.ts), from YouTube in the main window only.
   ipcMain.on('pip:open', (event) => {
     if (event.sender !== mainWindow?.webContents || !/^https:\/\/www\.youtube\.com\//.test(event.senderFrame?.url ?? '')) return;

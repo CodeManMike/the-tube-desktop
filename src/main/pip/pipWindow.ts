@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain, IpcMainEvent, screen } from 'electron';
 import path from 'path';
 import { pipEntry } from '../../pip/page';
+import { PageEntry } from '../../shared/plugin';
 import { PARTITION } from '../config';
 import { attachPageBundle } from '../pageBundle';
 import { Playing } from '../queue/model';
@@ -40,6 +41,8 @@ export class PipWindow {
     private readonly queue: QueueService,
     private readonly store: SettingsStore,
     private readonly icon: string,
+    // Plugins that also run in PiP (e.g. skipping); see PluginRegistry.pageEntries('pip').
+    private readonly pluginEntries: () => PageEntry[] = () => [],
   ) {
     ipcMain.on('pip:event', (event, raw) => {
       if (!this.fromPip(event)) return;
@@ -188,7 +191,7 @@ export class PipWindow {
       });
 
       this.devHook(win);
-      await attachPageBundle(win.webContents, () => [pipEntry()]);
+      await attachPageBundle(win.webContents, () => [pipEntry(), ...this.pluginEntries()]);
       this.queue.setPlayer({ webContents: win.webContents, navigate: (cmd) => this.send(cmd) }, () => this.dismiss());
       console.log(`[pip] open ${at.videoId} at ${at.timeSec.toFixed(1)}s`);
       win.loadURL(`https://www.youtube.com/watch?v=${at.videoId}&t=${Math.floor(at.timeSec)}s`).catch(() => {});
