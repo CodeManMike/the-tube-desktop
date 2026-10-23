@@ -39,3 +39,8 @@ if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('tt
     ipcRenderer.on('blocklist:added', (_event, c) => cb(c));
   },
 });
+
+// Return YouTube Dislike counts, for Show dislikes.
+if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('ttdRyd', {
+  votes: (videoId: string) => ipcRenderer.invoke('ryd:votes', videoId),
+});

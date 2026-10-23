@@ -15,6 +15,7 @@ import { QueueService } from './queue/queueService';
 import { QueueStore } from './queue/queueStore';
 import { PipWindow } from './pip/pipWindow';
 import { SponsorBlockClient } from './skip/sponsorBlock';
+import { RydClient } from './ryd';
 
 const ICON = path.join(app.getAppPath(), 'assets', 'icons', 'favicon.ico');
 const HOME = 'https://www.youtube.com';
@@ -220,6 +221,20 @@ if (isPrimary) app.whenReady().then(async () => {
       return [];
     }
     return sponsorBlock.segments(videoId);
+  });
+  // Show dislikes (plugins/ryd.ts): Return YouTube Dislike counts, for the main window only.
+  const ryd = new RydClient(async (url) => {
+    const res = await net.fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  });
+  ipcMain.handle('ryd:votes', (event, videoId: unknown) => {
+    const ok = event.sender === mainWindow?.webContents && /^https:\/\/www\.youtube\.com\//.test(event.senderFrame?.url ?? '');
+    if (!ok || typeof videoId !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+      console.warn('[ryd] ignored an invalid lookup request');
+      return null;
+    }
+    return ryd.votes(videoId);
   });
   // Hide watched (plugins/hideWatched.ts): TTD's own history, for the main window only.
   ipcMain.handle('history:watched', (event, threshold: unknown) => {
