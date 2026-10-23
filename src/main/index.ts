@@ -230,7 +230,8 @@ if (isPrimary) app.whenReady().then(async () => {
     mainWindow.webContents.on('console-message', async (event: any, _level?: number, legacy?: string) => {
       const m = String(event.message ?? legacy ?? '').match(/^\[ttd-dev\] capture ([\w-]+)$/);
       if (!m) return;
-      const shot = await mainWindow!.webContents.capturePage();
+      const shot = await mainWindow!.webContents.capturePage().catch((err: Error) => console.warn('[dev-capture] failed:', err.message));
+      if (!shot) return;
       require('fs').writeFileSync(path.join(path.dirname(devEval), `${m[1]}.png`), shot.toPNG());
       console.log('[dev-capture]', m[1]);
     });

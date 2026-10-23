@@ -7,6 +7,7 @@ export function ttdNotice(text: string, action?: { label: string; run: () => voi
   const player = document.querySelector('#movie_player') as HTMLElement | null;
   const r = player?.getBoundingClientRect() ?? { left: 0, bottom: innerHeight };
   const note = document.createElement('div');
+  note.className = 'ttd-skip-note';
   note.setAttribute('role', 'status');
   note.style.cssText =
     `position:fixed;left:${Math.round(r.left + 12)}px;top:${Math.round(r.bottom - 64)}px;z-index:10000;display:flex;align-items:center;gap:12px;` +

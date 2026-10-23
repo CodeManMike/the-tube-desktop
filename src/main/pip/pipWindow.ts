@@ -218,7 +218,8 @@ export class PipWindow {
     win.webContents.on('console-message', async (event: any, _level?: number, legacy?: string) => {
       const m = String(event.message ?? legacy ?? '').match(/^\[ttd-dev\] capture ([\w-]+)$/);
       if (!m || win.isDestroyed()) return;
-      fs.writeFileSync(path.join(path.dirname(file), `${m[1]}.png`), (await win.webContents.capturePage()).toPNG());
+      const shot = await win.webContents.capturePage().catch((err: Error) => console.warn('[dev-capture] failed:', err.message));
+      if (shot) fs.writeFileSync(path.join(path.dirname(file), `${m[1]}.png`), shot.toPNG());
       console.log('[dev-capture]', m[1]);
     });
     win.webContents.on('did-finish-load', async () => {

@@ -25,6 +25,7 @@ function sponsorBlockScript(settings: Record<string, unknown>): void {
     sponsor: 'sponsor', selfpromo: 'self-promotion', interaction: 'interaction reminder', intro: 'intro',
     outro: 'outro', preview: 'preview', filler: 'filler', music_offtopic: 'non-music section',
   };
+  const title = (category: string) => (NAMES[category] ?? category).replace(/^./, (c: string) => c.toUpperCase());
   const player = () => document.querySelector('#movie_player') as any;
   const video = () => document.querySelector('#movie_player video.html5-main-video') as HTMLVideoElement | null;
   const seek = (t: number) => {
@@ -82,7 +83,7 @@ function sponsorBlockScript(settings: Record<string, unknown>): void {
     } else if (d?.kind === 'button' && d.segment.uuid !== buttonFor) {
       const seg = d.segment;
       buttonFor = seg.uuid;
-      buttonNote = fns.ttdNotice(`${NAMES[seg.category] ?? seg.category}`, {
+      buttonNote = fns.ttdNotice(title(seg.category), {
         label: 'Skip',
         run: () => {
           handled.push(seg.uuid);
@@ -91,7 +92,7 @@ function sponsorBlockScript(settings: Record<string, unknown>): void {
         },
       }, 0);
     } else if (d?.kind === 'notify') {
-      fns.ttdNotice(`${(NAMES[d.segment.category] ?? d.segment.category).replace(/^./, (c: string) => c.toUpperCase())}`);
+      fns.ttdNotice(title(d.segment.category));
     }
     schedule();
   };
