@@ -34,6 +34,7 @@ export type Route =
   | { action: 'app' }
   | { action: 'external'; url: string }
   | { action: 'queueAdd'; videoId: string }
+  | { action: 'blockChannel'; channelId: string; handle: string; name: string }
   | { action: 'block' };
 
 const BLOCK: Route = { action: 'block' };
@@ -58,6 +59,14 @@ export function routeUrl(url: string): Route {
   if (u.hostname === 'www.youtube.com' && u.pathname === '/ttd/queue-add') {
     const id = u.searchParams.get('v') ?? '';
     return /^[A-Za-z0-9_-]{11}$/.test(id) ? { action: 'queueAdd', videoId: id } : BLOCK;
+  }
+  // TTD's "Block channel" menu item (see plugins/channelBlocklist.ts).
+  if (u.hostname === 'www.youtube.com' && u.pathname === '/ttd/block-channel') {
+    const channelId = u.searchParams.get('c') ?? '';
+    if (!/^UC[\w-]{22}$/.test(channelId)) return BLOCK;
+    const clean = (s: string | null, max: number) => (s ?? '').replace(/[\r\n()]/g, ' ').trim().slice(0, max);
+    const handle = clean(u.searchParams.get('h'), 100);
+    return { action: 'blockChannel', channelId, handle: /^@[\w.-]+$/.test(handle) ? handle : '', name: clean(u.searchParams.get('n'), 100) || channelId };
   }
   // YouTube's outbound-link interstitial: send its real target straight to the browser.
   if (u.hostname.endsWith('youtube.com') && u.pathname === '/redirect') {

@@ -55,3 +55,10 @@ test('media permission is the microphone only (voice search), never the camera',
   assert.equal(permissionAllowed('media', ['audio', 'video']), false);
   assert.equal(permissionAllowed('media', []), false);
 });
+
+test('routeUrl: Block channel becomes a blockChannel route; a bad channel id is blocked', () => {
+  assert.deepEqual(routeUrl('https://www.youtube.com/ttd/block-channel?c=UCuAXFkgsw1L7xaCfnd5JJOw&h=%40RickAstleyYT&n=Rick%20Astley'), {
+    action: 'blockChannel', channelId: 'UCuAXFkgsw1L7xaCfnd5JJOw', handle: '@RickAstleyYT', name: 'Rick Astley',
+  });
+  assert.deepEqual(routeUrl('https://www.youtube.com/ttd/block-channel?c=nope&n=x'), { action: 'block' });
+});
