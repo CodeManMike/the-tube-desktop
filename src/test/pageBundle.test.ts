@@ -19,5 +19,5 @@ test('every real plugin serialises into a bundle that parses, for the main windo
     const bundle = buildPageBundle(reg.pageEntries(ctx));
     assert.doesNotThrow(() => new Function(bundle), ctx);
   }
-  assert.deepEqual(reg.pageEntries('pip').map((e) => e.id), ['sponsorBlock', 'adSkip']);
+  assert.deepEqual(reg.pageEntries('pip').map((e) => e.id), ['sponsorBlock', 'adSkip', 'pinnedQuality']);
 });
