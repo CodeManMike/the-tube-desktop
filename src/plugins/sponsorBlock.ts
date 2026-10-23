@@ -28,19 +28,24 @@ function sponsorBlockScript(settings: Record<string, unknown>): void {
   const title = (category: string) => (NAMES[category] ?? category).replace(/^./, (c: string) => c.toUpperCase());
   const player = () => document.querySelector('#movie_player') as any;
   const video = () => document.querySelector('#movie_player video.html5-main-video') as HTMLVideoElement | null;
+  // Our own seeks (a skip) must not count as "seeking in by hand" for the next segment.
+  let selfSeek = false;
   const seek = (t: number) => {
+    selfSeek = true;
     const p = player();
     if (p?.seekTo) p.seekTo(t, true);
     else if (video()) video()!.currentTime = t;
   };
 
   let videoId: string | null = null;
+  let looked = false;
   let segments: any[] = [];
   let handled: string[] = [];
   let prev = 0;
   let seeked = false;
   let buttonFor: string | null = null;
-  let buttonNote: { close(): void } | null = null;
+  let buttonNote: { close(): void; isOpen(): boolean } | null = null;
+  let skipNote: { close(): void } | null = null;
   let timer = 0;
   const hooked = new WeakSet<HTMLVideoElement>();
 
@@ -50,25 +55,52 @@ function sponsorBlockScript(settings: Record<string, unknown>): void {
     buttonFor = null;
   };
 
-  const load = (id: string) => {
+  // A new video: forget the last one's segments and notes. `prev` starts where playback
+  // began (the media element's played range resets per source), so a segment the video
+  // started in still counts as entered even if this script hooked in late.
+  const reset = (id: string, v: HTMLVideoElement) => {
     videoId = id;
+    looked = false;
     segments = [];
     handled = [];
     closeButton();
-    const v = video();
-    if (!v || !Number.isFinite(v.duration) || v.duration <= 0) return; // live streams, premieres
-    bridge.segments(id).then((s: any[]) => {
-      if (videoId !== id || !Array.isArray(s)) return;
-      segments = s;
-      schedule();
-    });
+    skipNote?.close();
+    skipNote = null;
+    clearTimeout(timer);
+    prev = v.played.length ? v.played.start(0) : v.currentTime;
+    seeked = false;
+  };
+
+  // Look up once the duration is known; never for live streams or premieres.
+  const lookUp = (id: string, v: HTMLVideoElement) => {
+    if (looked || v.readyState < 1 || !Number.isFinite(v.duration) || v.duration <= 0) return;
+    if (player()?.getVideoData?.()?.isLive === true) return;
+    looked = true;
+    bridge
+      .segments(id)
+      .then((s: any[]) => {
+        if (videoId !== id || !Array.isArray(s)) return;
+        segments = s;
+        tick(); // a segment the video is already inside gets decided now, not at the next tick
+      })
+      .catch(() => {});
   };
 
   const tick = () => {
     const v = video();
     if (!v) return;
+    // Ads play in the same <video>: their time has nothing to do with this video's segments.
+    if (player()?.classList?.contains('ad-showing')) {
+      closeButton();
+      return;
+    }
     const id = player()?.getVideoData?.()?.video_id;
-    if (id && id !== videoId) load(id);
+    if (!id) return;
+    if (id !== videoId) reset(id, v);
+    lookUp(id, v);
+    if (!segments.length) return; // keep `prev` and `seeked` until the segments are known
+    // Another note (an ad, a notify) may have replaced the skip button: offer it again.
+    if (buttonFor && !buttonNote?.isOpen()) buttonFor = null;
     const now = v.currentTime;
     const d = fns.decideSkip(segments, settings, prev, now, v.duration, seeked, handled);
     prev = now;
@@ -79,13 +111,19 @@ function sponsorBlockScript(settings: Record<string, unknown>): void {
       seek(d.to);
       prev = d.to;
       const seg = d.segment;
-      fns.ttdNotice(`Skipped ${NAMES[seg.category] ?? seg.category}`, { label: 'Undo', run: () => seek(seg.start) });
+      skipNote = fns.ttdNotice(`Skipped ${NAMES[seg.category] ?? seg.category}`, {
+        label: 'Undo',
+        run: () => {
+          if (videoId === id) seek(seg.start); // never seek a video the queue moved on to
+        },
+      });
     } else if (d?.kind === 'button' && d.segment.uuid !== buttonFor) {
       const seg = d.segment;
       buttonFor = seg.uuid;
       buttonNote = fns.ttdNotice(title(seg.category), {
         label: 'Skip',
         run: () => {
+          if (videoId !== id) return;
           handled.push(seg.uuid);
           buttonFor = null;
           seek(Math.min(seg.end, v.duration - 0.25));
@@ -102,7 +140,7 @@ function sponsorBlockScript(settings: Record<string, unknown>): void {
     clearTimeout(timer);
     const v = video();
     if (!v || v.paused || !segments.length) return;
-    const next = segments.find((s) => s.start > v.currentTime && !handled.includes(s.uuid) && settings[s.category] !== 'ignore');
+    const next = segments.find((s) => s.start > v.currentTime && !handled.includes(s.uuid) && (settings[s.category] ?? 'ignore') !== 'ignore');
     if (next) timer = window.setTimeout(tick, ((next.start - v.currentTime) / (v.playbackRate || 1)) * 1000 + 20);
   };
 
@@ -111,7 +149,10 @@ function sponsorBlockScript(settings: Record<string, unknown>): void {
     if (!v || hooked.has(v)) return;
     hooked.add(v);
     v.addEventListener('timeupdate', tick);
-    v.addEventListener('seeking', () => (seeked = true));
+    v.addEventListener('seeking', () => {
+      if (selfSeek) selfSeek = false;
+      else seeked = true;
+    });
     for (const ev of ['play', 'ratechange', 'seeked', 'loadedmetadata']) v.addEventListener(ev, tick);
   };
   document.addEventListener('yt-navigate-finish', hook);

@@ -44,3 +44,11 @@ test('no decision without a finite duration', () => {
 });
 
 test('outside every segment gives nothing', () => assert.equal(decide([s('a', 'sponsor', 10, 30)], 40, 40.3), null));
+
+test('segments arriving late still skip a segment the video started in', () => {
+  assert.equal(decide([s('m', 'sponsor', 0, 20)], 0, 3)?.kind, 'skip');
+});
+
+test('opening part-way into a segment (e.g. PiP at &t=40) offers a button', () => {
+  assert.equal(decide([s('m', 'sponsor', 0, 60)], 40, 40.3)?.kind, 'button');
+});

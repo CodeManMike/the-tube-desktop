@@ -6,8 +6,8 @@ export type Decision =
   | { kind: 'notify'; segment: SegmentLike };
 
 // What to do at this moment of playback (spec §5.5). Runs in the page as a page function,
-// so it is self-contained. Automatic skips happen only when playback enters a segment (or
-// the video starts inside its first second); seeking into one by hand offers a button.
+// so it is self-contained. Automatic skips happen only when playback enters a segment
+// (including a segment the video started in); seeking into one by hand offers a button.
 export function decideSkip(
   segments: SegmentLike[],
   actions: Record<string, Action>,
@@ -25,7 +25,9 @@ export function decideSkip(
     if (now < segment.start || now >= segment.end - TAIL) continue;
     const action = actions[segment.category] ?? 'ignore';
     if (action === 'ignore') continue;
-    const entered = !seekedInto && (prev < segment.start || (now - segment.start < 1 && prev <= segment.start));
+    // `prev` is where playback last was (or began, for a new video): entering means no
+    // seek by hand since a position at or before the segment's start.
+    const entered = !seekedInto && prev <= segment.start;
     if (action === 'notify') {
       if (entered) return { kind: 'notify', segment };
       continue;
