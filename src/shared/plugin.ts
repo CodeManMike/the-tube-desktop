@@ -28,6 +28,7 @@ export type PlayerControls = {
   next(): void;
   previous(): void;
   togglePip(): void;
+  isPipOpen(): boolean;
   showHide(): void;
   openSettings(): void;
   quit(): void;

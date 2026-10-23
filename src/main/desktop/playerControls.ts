@@ -25,6 +25,7 @@ export function createPlayerControls(deps: {
     next: () => deps.queue.step('next'),
     previous: () => deps.queue.step('previous'),
     togglePip: () => (deps.pip.isOpen() ? deps.pip.close() : deps.pip.open()),
+    isPipOpen: () => deps.pip.isOpen(),
     showHide: () => {
       const win = deps.mainWindow();
       if (!win) return;
