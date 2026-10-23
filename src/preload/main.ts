@@ -17,4 +17,7 @@ if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('tt
       ipcRenderer.on('queue:fetch', (_event, request) => cb(request));
     },
   },
+  pip: {
+    open: () => ipcRenderer.send('pip:open'),
+  },
 });

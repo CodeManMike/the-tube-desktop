@@ -242,6 +242,22 @@ export class QueueModel {
     return JSON.stringify([this.s.sourceListId, this.s.current, this.s.items.map((i) => i.uid)]);
   }
 
+  // Next (PiP or panel): exactly what the video ending would do, so detours return.
+  next(videoId: string): Command {
+    return this.ended(videoId, null);
+  }
+
+  // Previous: back from a detour to where it started, otherwise the previous queue item;
+  // on the first item, restart it.
+  previous(videoId: string): Command {
+    if (videoId === this.s.detourVideoId) return this.back();
+    if (videoId !== this.currentVideoId() || this.s.current === null) return null;
+    if (this.s.current === 0) return navigate(videoId, 0);
+    this.s.current--;
+    this.leaveDetour();
+    return navigate(this.s.items[this.s.current].videoId);
+  }
+
   // The full playlist arrived (YouTube only sends a window of ~25 items at first). Applies
   // only while the queue is exactly as it was when the fetch started (no edits, same
   // playhead), keeping the current video, including which copy of a repeated one.

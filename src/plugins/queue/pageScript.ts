@@ -257,6 +257,11 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
       // From the player, not the URL: the miniplayer keeps playing while you browse.
       const videoId = p.getVideoData?.()?.video_id ?? urlVideoId();
       if (st === 0 && videoId) api.report({ type: 'ended', videoId });
+      // Report playing straight away (not on the next 5 s tick), so PiP closes promptly.
+      if (st === 1 && videoId) {
+        const vd = p.getVideoData?.() ?? {};
+        api.report({ type: 'progress', videoId, timeSec: p.getCurrentTime(), title: vd.title, channel: vd.author, durationSec: p.getDuration() || 0 });
+      }
     });
   };
 
