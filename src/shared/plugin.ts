@@ -6,12 +6,18 @@ import { SettingDef } from './settings';
 export type Endpoint = 'browse' | 'next' | 'player' | 'search' | 'initialData' | 'initialPlayerResponse';
 
 // Runs inside the page, serialised with toString(): it must not reference anything outside its body.
-export type Transform = (data: any, settings: Record<string, unknown>) => any;
+// What a response is for: its endpoint, and for /browse the page asked for (browseId), which
+// tells Home from History or a channel before the URL changes (continuations carry none).
+export type TransformContext = { endpoint: string; browseId?: string };
+export type Transform = (data: any, settings: Record<string, unknown>, ctx?: TransformContext) => any;
 
 export type PluginManifest = {
   id: string;
   name: string;
-  description: string;
+  // Only for test plugins; shipped plugins say what they are by name (see hint).
+  description?: string;
+  // A tooltip (ⓘ) for what the user can't see but needs to know.
+  hint?: string;
   defaultEnabled: boolean;
   settings: SettingDef[];
 };
@@ -29,6 +35,11 @@ export type Plugin = {
   transforms?: Partial<Record<Endpoint, Transform | Transform[]>>;
   css?: string;
   pageScript?: (settings: Record<string, unknown>) => void;
+  // Settings read from another plugin, so the user sets one number in one place
+  // (e.g. Hide watched uses the queue's "Counts as watched at").
+  borrows?: Record<string, { plugin: string; key: string }>;
+  // Runs at document start, before YouTube's own scripts.
+  earlyScript?: (settings: Record<string, unknown>) => void;
   // Self-contained helpers the page script can call as globalThis.__ttdFns[name].
   pageFunctions?: Record<string, Function>;
   main?: (ctx: MainContext) => void;
@@ -41,5 +52,6 @@ export type PageEntry = {
   transforms: Partial<Record<Endpoint, string>>;
   css?: string;
   script?: string;
+  early?: string;
   functions?: Record<string, string>;
 };

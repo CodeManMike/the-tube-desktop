@@ -158,3 +158,42 @@ test('page functions survive the bundle', () => {
   vm.runInNewContext(buildPageBundle([{ id: 'f', settings: {}, transforms: {}, functions: { inc: '((x) => x + 1)' } }]), sandbox);
   assert.equal(vm.runInNewContext('globalThis.__ttdFns.inc(1)', sandbox), 2);
 });
+
+test('early scripts run straight away, with their settings, before anything else', () => {
+  fakePage();
+  const order: string[] = [];
+  (globalThis as any).__order = order;
+  pageRuntime([
+    { ...live(entry('a', {})), early: (s: any) => (globalThis as any).__order.push('early:' + s.x) } as any,
+  ].map((e) => ({ ...e, settings: { x: 1 } })));
+  assert.deepEqual(order, ['early:1']);
+});
+
+test('a throwing early script is contained and named in the log', () => {
+  fakePage();
+  const logs: string[] = [];
+  const warn = console.warn;
+  console.warn = (m: string) => logs.push(String(m));
+  const ran: string[] = [];
+  (globalThis as any).__ran = ran;
+  try {
+    pageRuntime([
+      { ...live(entry('bad', {})), early: () => { throw new Error('boom'); } } as any,
+      { ...live(entry('good', {})), early: () => (globalThis as any).__ran.push('good') } as any,
+    ]);
+  } finally {
+    console.warn = warn;
+  }
+  assert.deepEqual(ran, ['good']);
+  assert.ok(logs.some((l) => l.includes('bad') && l.includes('boom')), logs.join('|'));
+});
+
+test('transforms receive the endpoint and the browseId of the request', async () => {
+  fakePage();
+  const seen: any[] = [];
+  (globalThis as any).__seen = seen;
+  pageRuntime([entry('a', { browse: '(d, s, ctx) => { globalThis.__seen.push(ctx); return d; }' })].map(live));
+  await fetch(BROWSE, { method: 'POST', body: JSON.stringify({ browseId: 'FEhistory' }) });
+  await fetch(BROWSE, { method: 'POST', body: JSON.stringify({ continuation: 'x' }) });
+  assert.deepEqual(seen, [{ endpoint: 'browse', browseId: 'FEhistory' }, { endpoint: 'browse' }]);
+});

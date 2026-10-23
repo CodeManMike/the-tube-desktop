@@ -41,7 +41,7 @@ export const pip: Plugin = {
   manifest: {
     id: 'pip',
     name: 'Picture-in-picture button',
-    description: 'Adds a button to the player that opens the video in a small always-on-top window.',
+    hint: 'Ctrl+Shift+P also opens picture-in-picture.',
     defaultEnabled: true,
     settings: [],
   },

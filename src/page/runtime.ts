@@ -8,6 +8,8 @@ export type RuntimeEntry = {
   css: string | null;
   script: ((settings: Record<string, unknown>) => void) | null;
   functions?: Record<string, Function>;
+  // Runs at once, before YouTube's own scripts (e.g. to change what codecs the page sees).
+  early?: ((settings: Record<string, unknown>) => void) | null;
 };
 
 export function pageRuntime(entries: RuntimeEntry[]): void {
@@ -15,12 +17,21 @@ export function pageRuntime(entries: RuntimeEntry[]): void {
   if (location.hostname !== 'www.youtube.com') return;
 
   const MAX_FAILURES = 3;
-  type Fn = (data: any, settings: Record<string, unknown>) => any;
+  type Fn = (data: any, settings: Record<string, unknown>, ctx: { endpoint: string; browseId?: string }) => any;
   type Live = { id: string; settings: Record<string, unknown>; fns: Record<string, Fn | Fn[]>; failures: number; off: boolean };
 
   // Plugins' page helpers, for their page scripts to call.
   const fns = ((globalThis as any).__ttdFns ??= {});
   for (const e of entries) Object.assign(fns, e.functions ?? {});
+
+  for (const e of entries) {
+    if (!e.early) continue;
+    try {
+      e.early(e.settings);
+    } catch (err) {
+      console.warn(`[ttd] ${e.id} early script failed: ${(err as Error).message}`);
+    }
+  }
 
   const live: Live[] = entries.map((e) => ({
     id: e.id,
@@ -50,14 +61,21 @@ export function pageRuntime(entries: RuntimeEntry[]): void {
   // Fail safe: a throwing transform leaves the data as it was; three strikes and the
   // plugin is off for this page. (Transforms that mutate in place before throwing can
   // still leave partial edits; plugins should avoid that.)
-  const apply = (endpoint: string, data: any) => {
+  const apply = (endpoint: string, data: any, body?: unknown) => {
+    // The page a /browse response is for, from the request (the URL changes only afterwards).
+    let browseId: string | undefined;
+    try {
+      const parsed = typeof body === 'string' ? JSON.parse(body) : null;
+      if (typeof parsed?.browseId === 'string') browseId = parsed.browseId;
+    } catch {}
+    const ctx = browseId ? { endpoint, browseId } : { endpoint };
     for (const p of live) {
       const entry = p.fns[endpoint];
       if (!entry) continue;
       for (const fn of Array.isArray(entry) ? entry : [entry]) {
         if (p.off) break;
         try {
-          const out = fn(data, p.settings);
+          const out = fn(data, p.settings, ctx);
           if (out !== undefined) data = out;
         } catch (err) {
           p.failures++;
@@ -99,12 +117,15 @@ export function pageRuntime(entries: RuntimeEntry[]): void {
   if (typeof fetch === 'function') {
     const origFetch = fetch;
     window.fetch = async function (this: any, input: RequestInfo | URL, init?: RequestInit) {
-      const res = await origFetch.call(this, input, init);
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       const endpoint = endpointOf(url);
+      // Read the request body before fetch consumes it (only for endpoints we rewrite).
+      let body: unknown = init?.body;
+      if (endpoint && body === undefined && typeof Request !== 'undefined' && input instanceof Request) body = await input.clone().text().catch(() => undefined);
+      const res = await origFetch.call(this, input, init);
       if (!endpoint || !res.ok) return res;
       try {
-        const data = apply(endpoint, await res.clone().json());
+        const data = apply(endpoint, await res.clone().json(), body);
         return new Response(JSON.stringify(data), { status: res.status, statusText: res.statusText, headers: res.headers });
       } catch {
         return res;
@@ -118,7 +139,13 @@ export function pageRuntime(entries: RuntimeEntry[]): void {
     proto.open = function (this: any, _method: string, url: string) {
       this.__ttdUrl = String(url);
       this.__ttdText = undefined; // a reused XHR must not serve the previous rewrite
+      this.__ttdBody = undefined;
       return origOpen.apply(this, arguments as any);
+    };
+    const origSend = proto.send;
+    proto.send = function (this: any, body?: unknown) {
+      this.__ttdBody = body;
+      return origSend.apply(this, arguments as any);
     };
     const textDesc = Object.getOwnPropertyDescriptor(proto, 'responseText')!;
     const respDesc = Object.getOwnPropertyDescriptor(proto, 'response')!;
@@ -130,7 +157,7 @@ export function pageRuntime(entries: RuntimeEntry[]): void {
         try {
           // The native responseText getter throws for responseType 'json'; read the object instead.
           const parsed = xhr.responseType === 'json' ? respDesc.get!.call(xhr) : JSON.parse(textDesc.get!.call(xhr));
-          xhr.__ttdText = JSON.stringify(apply(endpoint, parsed));
+          xhr.__ttdText = JSON.stringify(apply(endpoint, parsed, xhr.__ttdBody));
         } catch {
           xhr.__ttdText = null;
         }

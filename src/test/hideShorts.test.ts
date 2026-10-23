@@ -48,3 +48,19 @@ test('the plugin manifest is valid', () => {
   const fns = ['browse', 'next', 'search', 'initialData'].map((e) => transforms![e as 'browse']);
   assert.ok(fns.every((f) => typeof f === 'function' && f === fns[0]));
 });
+
+const search = hideShorts.transforms!.search as Transform;
+
+test('a search grid of Shorts is removed', () => {
+  const data = { contents: [{ itemSectionRenderer: { contents: [
+    { gridShelfViewModel: { contents: [{ shortsLockupViewModel: { entityId: 'x' } }, { shortsLockupViewModel: { entityId: 'y' } }] } },
+    video('a'),
+  ] } }] };
+  assert.deepEqual(search(data, {}).contents[0].itemSectionRenderer.contents, [video('a')]);
+});
+
+test('a grid with any normal video is kept', () => {
+  const grid = { gridShelfViewModel: { contents: [{ shortsLockupViewModel: {} }, { videoRenderer: { videoId: 'v' } }] } };
+  const data = { contents: [{ itemSectionRenderer: { contents: [grid] } }] };
+  assert.equal(search(data, {}).contents[0].itemSectionRenderer.contents.length, 1);
+});

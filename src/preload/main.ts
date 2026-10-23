@@ -26,3 +26,21 @@ if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('tt
 if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('ttdSkip', {
   segments: (videoId: string) => ipcRenderer.invoke('skip:segments', videoId),
 });
+
+// TTD's own watch history, for Hide watched.
+if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('ttdHistory', {
+  watched: (threshold: number) => ipcRenderer.invoke('history:watched', threshold),
+});
+
+// A channel blocked from the ⋮ menu, so the page can hide it straight away.
+if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('ttdBlock', {
+  onAdded: (cb: (c: unknown) => void) => {
+    ipcRenderer.removeAllListeners('blocklist:added');
+    ipcRenderer.on('blocklist:added', (_event, c) => cb(c));
+  },
+});
+
+// Return YouTube Dislike counts, for Show dislikes.
+if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('ttdRyd', {
+  votes: (videoId: string) => ipcRenderer.invoke('ryd:votes', videoId),
+});

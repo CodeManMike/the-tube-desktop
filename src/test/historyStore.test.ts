@@ -40,3 +40,14 @@ test('corrupt history file starts empty', () => {
   fs.writeFileSync(file, 'nope');
   assert.equal(new HistoryStore(file).get('aaaaaaaaaaa'), undefined);
 });
+
+test('watchedIds returns ids at or over the threshold, most recent first, capped', () => {
+  let now = 0;
+  const h = new HistoryStore(tmp(), () => now);
+  now = 1; h.record({ videoId: 'aaaaaaaaaaa', durationSec: 100, timeSec: 90 });
+  now = 2; h.record({ videoId: 'bbbbbbbbbbb', durationSec: 100, timeSec: 40 });
+  now = 3; h.record({ videoId: 'ccccccccccc', durationSec: 100, timeSec: 80 });
+  now = 4; h.record({ videoId: 'ddddddddddd', durationSec: 0, timeSec: 80 });
+  assert.deepEqual(h.watchedIds(80), ['ccccccccccc', 'aaaaaaaaaaa']);
+  assert.deepEqual(h.watchedIds(80, 1), ['ccccccccccc']);
+});
