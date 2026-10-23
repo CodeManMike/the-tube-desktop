@@ -22,6 +22,8 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
   let currentOwner: { channelId: string; name: string } | null = null;
   let menuOpen = false;
   let topicInput = false;
+  // What's typed in the topic box, kept across re-renders (state updates rebuild the panel).
+  let topicDraft = '';
   let playerHooked = false;
 
   const player = () => document.querySelector('#movie_player') as any;
@@ -108,14 +110,18 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
       const input = el('input', 'ttd-shuffle-topic') as HTMLInputElement;
       input.placeholder = 'Topic, e.g. lofi';
       input.maxLength = 200;
+      input.value = topicDraft;
+      input.addEventListener('input', () => (topicDraft = input.value));
       input.addEventListener('keydown', (e) => {
         e.stopPropagation(); // keep YouTube's keyboard shortcuts out of the text box
         if (e.key === 'Enter' && input.value.trim()) {
           api.report({ type: 'shuffle', action: 'topic', query: input.value.trim() });
+          topicDraft = '';
           menuOpen = false;
           topicInput = false;
           render();
         } else if (e.key === 'Escape') {
+          topicDraft = '';
           menuOpen = false;
           topicInput = false;
           render();

@@ -281,3 +281,22 @@ test('adoptPlaying makes the playing video current when the queue is empty', () 
   m.adoptPlaying({ videoId: B, timeSec: 0 });
   assert.deepEqual(ids(m), [A]); // a non-empty queue is left alone
 });
+
+
+test('extendPlaylist is dropped if the queue changed since the fetch started', () => {
+  const m = model();
+  m.replaceWithPlaylist('PLx', [v(B), v(C)], B, 0);
+  const snapshot = m.playlistSnapshot();
+  m.add(v(E)); // user edits while the rest of the playlist loads
+  assert.equal(m.extendPlaylist('PLx', [v(A), v(B), v(C), v(D)], snapshot), false);
+  assert.deepEqual(ids(m), [B, C, E]);
+});
+
+test('extendPlaylist keeps the playhead on the right copy of a repeated video', () => {
+  const m = model();
+  m.replaceWithPlaylist('PLx', [v(B), v(C), v(B)], B, 0);
+  m.jump(m.state().items[2].uid); // the second B
+  const snapshot = m.playlistSnapshot();
+  assert.equal(m.extendPlaylist('PLx', [v(B), v(C), v(B), v(D)], snapshot), true);
+  assert.equal(m.state().current, 2);
+});

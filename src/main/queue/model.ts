@@ -237,13 +237,27 @@ export class QueueModel {
     return navigate(point.videoId, point.timeSec);
   }
 
+  // What extendPlaylist checks against, taken when the full-playlist fetch starts.
+  playlistSnapshot(): string {
+    return JSON.stringify([this.s.sourceListId, this.s.current, this.s.items.map((i) => i.uid)]);
+  }
+
   // The full playlist arrived (YouTube only sends a window of ~25 items at first). Applies
-  // only while the queue still comes from that playlist, keeping the current video.
-  extendPlaylist(listId: string, items: NewItem[]): boolean {
+  // only while the queue is exactly as it was when the fetch started (no edits, same
+  // playhead), keeping the current video, including which copy of a repeated one.
+  extendPlaylist(listId: string, items: NewItem[], snapshot?: string): boolean {
     if (this.s.sourceListId !== listId) return false;
+    if (snapshot !== undefined && snapshot !== this.playlistSnapshot()) return false;
     const currentId = this.currentVideoId();
-    const at = currentId === null ? -1 : items.findIndex((i) => i.videoId === currentId);
-    if (currentId !== null && at < 0) return false;
+    let at = -1;
+    if (currentId !== null) {
+      const copy = this.s.items.slice(0, this.s.current!).filter((i) => i.videoId === currentId).length;
+      for (let i = 0, seen = 0; i < items.length && at < 0; i++) {
+        if (items[i].videoId === currentId && seen++ === copy) at = i;
+      }
+      if (at < 0) at = items.findIndex((i) => i.videoId === currentId);
+      if (at < 0) return false;
+    }
     this.s.items = items.map((i) => this.withUid(i));
     this.s.current = currentId === null ? null : at;
     return true;

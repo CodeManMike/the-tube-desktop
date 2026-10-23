@@ -139,3 +139,71 @@ test('every creator\'s first page is fetched before picking, even when one alone
   await new ShuffleRunner(request, () => false, () => 0.5).refill(m, 10);
   assert.deepEqual(calls, ['VLUU' + RICK.channelId.slice(2), 'VLUU' + BEN.channelId.slice(2)]);
 });
+
+
+test('after a failed fetch, refills pause (backoff) instead of retrying immediately', async () => {
+  const m = shuffling({ kind: 'topic', query: 'lofi' });
+  let now = 0;
+  let calls = 0;
+  const runner = new ShuffleRunner(async () => {
+    calls++;
+    throw new Error('HTTP 429');
+  }, () => false, () => 0, () => now);
+  await runner.refill(m, 10, { force: true });
+  await runner.refill(m, 10, { force: true });
+  await runner.refill(m, 10);
+  assert.equal(calls, 1);
+  now += 10 * 60_000 + 1;
+  await runner.refill(m, 10);
+  assert.equal(calls, 2);
+  now += 10 * 60_000 + 1; // second failure doubles the pause
+  await runner.refill(m, 10);
+  assert.equal(calls, 2);
+});
+
+test('pages that keep coming back empty end the source instead of looping', async () => {
+  const m = shuffling({ kind: 'topic', query: 'drift' });
+  const pages: Record<string, Page> = { drift: { items: [], continuation: 'c1' } };
+  for (let p = 1; p < 20; p++) pages[`c${p}`] = { items: [], continuation: `c${p + 1}` };
+  const { request, calls } = fakeRequest(pages);
+  const runner = new ShuffleRunner(request, () => false, () => 0);
+  await runner.refill(m, 10);
+  assert.equal(m.state().shuffleExhausted, true);
+  assert.ok(calls.length <= 3);
+});
+
+test('adding a creator fetches only the new creator (pages are cached per creator)', async () => {
+  const m = shuffling({ kind: 'creators', creators: [RICK] });
+  const many = (from: number) => Array.from({ length: 30 }, (_, i) => cand(from + i));
+  const { request, calls } = fakeRequest({
+    ['VLUU' + RICK.channelId.slice(2)]: { items: many(100), continuation: 'rick2' },
+    ['VLUU' + BEN.channelId.slice(2)]: { items: many(200), continuation: 'ben2' },
+  });
+  const runner = new ShuffleRunner(request, () => false, () => 0.5);
+  await runner.refill(m, 10, { force: true });
+  m.setShuffle({ kind: 'creators', creators: [RICK, BEN] });
+  await runner.refill(m, 10, { force: true });
+  assert.deepEqual(calls, ['VLUU' + RICK.channelId.slice(2), 'VLUU' + BEN.channelId.slice(2)]);
+  assert.ok(m.state().items.some((i) => Number(i.videoId.slice(1)) >= 200), 'the new creator contributes to the batch');
+});
+
+test('a pick made while a refill is running is carried out right after it', async () => {
+  const m = shuffling({ kind: 'creators', creators: [RICK] });
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const request = async (_e: 'browse' | 'search', body: any): Promise<Page> => {
+    if (body.browseId === 'VLUU' + RICK.channelId.slice(2)) {
+      await gate;
+      return { items: [cand(1)], continuation: null };
+    }
+    return { items: [cand(2)], continuation: null };
+  };
+  const runner = new ShuffleRunner(request, () => false, () => 0);
+  const first = runner.refill(m, 10, { force: true });
+  m.setShuffle({ kind: 'topic', query: 'lofi' });
+  await runner.refill(m, 10, { force: true }); // arrives while busy
+  release();
+  await first;
+  await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(m.state().items.map((i) => i.videoId), [id(2)]);
+});

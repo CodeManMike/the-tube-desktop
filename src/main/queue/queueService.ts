@@ -135,21 +135,22 @@ export class QueueService {
   }
 
   // YouTube sends only a ~25-item window of a playlist; fetch the rest (up to 500).
-  private async fetchFullPlaylist(listId: string): Promise<void> {
+  private async fetchFullPlaylist(listId: string, snapshot: string): Promise<void> {
     const items: NewItem[] = [];
     let body: object = { browseId: 'VL' + listId };
     try {
       for (let pages = 0; pages < FULL_PLAYLIST_MAX_PAGES && items.length < FULL_PLAYLIST_MAX; pages++) {
         const page = await this.bridge.request('browse', body);
-        for (const { watchedPercent: _w, ...item } of page.items) if (!items.some((i) => i.videoId === item.videoId)) items.push(item);
+        for (const { watchedPercent: _w, ...item } of page.items) items.push(item);
         if (!page.continuation) break;
         body = { continuation: page.continuation };
       }
     } catch (err) {
       console.warn(`[queue] full playlist fetch failed: ${(err as Error).message}`);
     }
-    // A late result for a queue you've since replaced is dropped by the model.
-    if (items.length > 0 && this.model.extendPlaylist(listId, items.slice(0, FULL_PLAYLIST_MAX))) this.commit(null);
+    // A late result for a queue you've since replaced or edited is dropped by the model.
+    if (items.length > 0 && this.model.extendPlaylist(listId, items.slice(0, FULL_PLAYLIST_MAX), snapshot)) this.commit(null);
+    else if (items.length > 0) console.log(`[queue] dropped the full playlist ${listId}: the queue changed while it loaded`);
   }
 
   handle(ev: PageEvent): void {
@@ -187,7 +188,7 @@ export class QueueService {
           const replaced = before !== ev.listParam && this.model.state().sourceListId === ev.listParam;
           const wantsRest = replaced && shouldFetchRestOfPlaylist(meta, ev.playlist.items.length);
           console.log(`[queue] playlist ${ev.listParam}: ${ev.playlist.items.length} of ${meta?.totalVideos ?? '?'} sent${meta?.isInfinite ? ' (endless mix)' : ''}${wantsRest ? '; fetching the rest' : ''}`);
-          if (wantsRest) this.fetchFullPlaylist(ev.listParam);
+          if (wantsRest) this.fetchFullPlaylist(ev.listParam, this.model.playlistSnapshot());
         }
         break;
       case 'action': {
@@ -208,7 +209,8 @@ export class QueueService {
         break;
     }
     this.commit(command);
-    if (ev.type === 'ended' || ev.type === 'action') this.refill();
+    // Skipping ahead (navigated) uses up the queue too.
+    if (ev.type === 'ended' || ev.type === 'action' || ev.type === 'navigated') this.refill();
   }
 
   // Losing the queue counts as breakage: save first, then tell the page.

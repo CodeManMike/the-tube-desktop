@@ -130,6 +130,7 @@ export function validateEvent(raw: unknown): PageEvent | null {
       if (typeof raw.requestId !== 'string' || raw.requestId.length > 32 || !Array.isArray(raw.items)) return null;
       const token = raw.continuation;
       if (token !== null && token !== undefined && !(typeof token === 'string' && token.length <= MAX_TOKEN)) return null;
+      if (raw.items.length > MAX_FETCHED_ITEMS) console.warn(`[shuffle] page had ${raw.items.length} items; keeping the first ${MAX_FETCHED_ITEMS}`);
       return {
         type: 'fetched',
         requestId: raw.requestId,

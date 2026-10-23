@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Candidate } from './shuffle';
 
 export type FetchRequest = { requestId: string; endpoint: 'browse' | 'search'; body: object };
@@ -8,7 +9,6 @@ type Pending = { resolve: (page: { items: Candidate[]; continuation: string | nu
 // Asks the page to fetch an InnerTube page (same-origin, so it carries the user's session)
 // and matches the answer back to the request. Unknown or late answers are dropped.
 export class FetchBridge {
-  private next = 0;
   private readonly pending = new Map<string, Pending>();
 
   constructor(
@@ -17,7 +17,8 @@ export class FetchBridge {
   ) {}
 
   request(endpoint: 'browse' | 'search', body: object): Promise<{ items: Candidate[]; continuation: string | null }> {
-    const requestId = `r${++this.next}`;
+    // Unguessable, so nothing else on the page can answer for a request (32 chars).
+    const requestId = randomUUID().replace(/-/g, '');
     console.log(`[shuffle] page fetch ${requestId} ${endpoint}`);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
