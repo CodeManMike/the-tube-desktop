@@ -30,3 +30,28 @@ test('pip bounds fall back when the saved monitor is gone', () =>
 
 test('pip bounds restore a saved position that is still on screen', () =>
   assert.deepEqual(pipBounds({ x: 100, y: 100, width: 640, height: 360, alwaysOnTop: false }, [AREA]), { x: 100, y: 100, width: 640, height: 360 }));
+
+import { openingBounds, withTimeout } from '../main/pip/geometry';
+
+test('a vertical video at the default spot stays fully on screen', () => {
+  const r = fitAspect(defaultPipBounds(AREA), 9 / 16, AREA);
+  assert.ok(r.y >= 0 && r.y + r.height <= AREA.height, `y ${r.y} h ${r.height}`);
+  assert.ok(r.x >= 0 && r.x + r.width <= AREA.width);
+});
+
+test('resizing near the right edge keeps the window on screen', () => {
+  const r = resizeFromCorner({ x: 1500, y: 100, width: 400, height: 225 }, 0, 400, 16 / 9, AREA);
+  assert.ok(r.x + r.width <= AREA.width, `right edge ${r.x + r.width}`);
+});
+
+test('a window saved tall (after a Short) reopens at 16:9', () => {
+  const r = openingBounds({ x: 100, y: 100, width: 300, height: 533, alwaysOnTop: true }, [AREA]);
+  assert.equal(r.width, 300);
+  assert.equal(r.height, 169);
+});
+
+test('withTimeout gives the fallback when the promise hangs', async () => {
+  assert.equal(await withTimeout(new Promise(() => {}), 10, 'fallback'), 'fallback');
+  assert.equal(await withTimeout(Promise.resolve('real'), 10, 'fallback'), 'real');
+  assert.equal(await withTimeout(Promise.reject(new Error('x')), 10, 'fallback'), 'fallback');
+});

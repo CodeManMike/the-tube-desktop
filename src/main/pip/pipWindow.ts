@@ -7,13 +7,17 @@ import { Playing } from '../queue/model';
 import { QueueService } from '../queue/queueService';
 import { SettingsStore } from '../settingsStore';
 import { Rect } from '../windowState';
-import { fitAspect, MIN_PIP_WIDTH, moveBy, pipBounds, resizeFromCorner } from './geometry';
+import { fitAspect, MIN_PIP_WIDTH, moveBy, openingBounds, resizeFromCorner, withTimeout } from './geometry';
 
 const PLAYER = `document.querySelector('#movie_player')`;
+// The player outlives the watch page (YouTube keeps it in the DOM), so a video only counts
+// on a watch page or in the miniplayer, and while it's loaded (playing, paused, buffering).
 const NOW_PLAYING = `(() => {
   const p = ${PLAYER};
   const d = p && p.getVideoData && p.getVideoData();
-  return d && d.video_id ? { videoId: d.video_id, timeSec: p.getCurrentTime() } : null;
+  const shown = location.pathname === '/watch' || !!document.querySelector('ytd-miniplayer[active], ytd-app[miniplayer-is-active]');
+  const loaded = [1, 2, 3].includes(p && p.getPlayerState && p.getPlayerState());
+  return shown && loaded && d && d.video_id ? { videoId: d.video_id, timeSec: p.getCurrentTime() } : null;
 })()`;
 const WATCH = /^https:\/\/www\.youtube\.com\/watch\?/;
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -85,11 +89,16 @@ export class PipWindow {
         this.close();
         return;
       case 'aspect':
-        if (!finite(msg.ratio) || msg.ratio < 0.25 || msg.ratio > 4 || Math.abs(msg.ratio - this.ratio) < 0.01) return;
+      {
+        if (!finite(msg.ratio) || msg.ratio < 0.25 || msg.ratio > 4) return;
         this.ratio = msg.ratio;
         win.setAspectRatio(this.ratio);
-        win.setBounds(fitAspect(win.getBounds(), this.ratio, this.area()));
+        // Compare with the window's actual shape, not the last ratio: it may have been
+        // restored from another video's shape.
+        const b = win.getBounds();
+        if (Math.abs(b.width / b.height - this.ratio) >= 0.01) win.setBounds(fitAspect(b, this.ratio, this.area()));
         return;
+      }
       case 'dragStart':
         if ((msg.mode !== 'move' && msg.mode !== 'resize') || !finite(msg.screenX, msg.screenY)) break;
         this.drag = { mode: msg.mode, start: win.getBounds(), x: msg.screenX, y: msg.screenY };
@@ -123,7 +132,7 @@ export class PipWindow {
 
       const saved = this.store.getPipState();
       const win = new BrowserWindow({
-        ...pipBounds(saved, screen.getAllDisplays().map((d) => d.workArea)),
+        ...openingBounds(saved, screen.getAllDisplays().map((d) => d.workArea)),
         frame: false,
         alwaysOnTop: saved?.alwaysOnTop ?? true,
         backgroundColor: '#000',
@@ -154,18 +163,24 @@ export class PipWindow {
       });
 
       // Every way of closing (Return, Alt+F4, the taskbar) goes through here.
+      // A second close while the first is still reading the time is held too, and the
+      // handback always runs, even if the page hangs or the window is already gone.
       let closing = false;
       win.on('close', async (event) => {
-        if (closing) return;
         event.preventDefault();
+        if (closing) return;
         closing = true;
-        const now = await win.webContents.executeJavaScript(NOW_PLAYING).catch(() => null);
-        const resumeAt = isPlaying(now) ? now : this.last;
-        this.save();
-        win.destroy();
-        if (this.handoff && resumeAt) this.queue.resumeInMain(resumeAt);
-        else this.queue.setPlayer(null);
-        console.log(`[pip] closed${this.handoff && resumeAt ? `; main resumes ${resumeAt.videoId} at ${resumeAt.timeSec.toFixed(1)}s` : ''}`);
+        this.save(); // before the wait: the window may be gone after it
+        let resumeAt: Playing | null = this.last;
+        try {
+          const now = await withTimeout(win.webContents.executeJavaScript(NOW_PLAYING), 500, null);
+          if (isPlaying(now)) resumeAt = now;
+        } finally {
+          if (!win.isDestroyed()) win.destroy();
+          if (this.handoff && resumeAt) this.queue.resumeInMain(resumeAt);
+          else this.queue.setPlayer(null);
+          console.log(`[pip] closed${this.handoff && resumeAt ? `; main resumes ${resumeAt.videoId} at ${resumeAt.timeSec.toFixed(1)}s` : ''}`);
+        }
       });
       win.on('closed', () => {
         this.win = null;
