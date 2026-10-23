@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, components, net, screen, session, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, components, net, screen, session, shell } from 'electron';
 import path from 'path';
 import { PARTITION } from './config';
 import { migrateLegacyProfile } from './migrate';
@@ -13,6 +13,7 @@ import { HistoryStore } from './history/historyStore';
 import { QueueModel } from './queue/model';
 import { QueueService } from './queue/queueService';
 import { QueueStore } from './queue/queueStore';
+import { PipWindow } from './pip/pipWindow';
 
 const ICON = path.join(app.getAppPath(), 'assets', 'icons', 'favicon.ico');
 const HOME = 'https://www.youtube.com';
@@ -32,6 +33,7 @@ app.setAppUserModelId('com.thetubedesktop.app');
 let mainWindow: BrowserWindow | null = null;
 let bundle: PageBundleHandle | null = null;
 let queueService: QueueService | null = null;
+let pipWindow: PipWindow | null = null;
 
 // Two instances on one profile can't share the cookie database, so a second one
 // would start signed out. Hand over to the running window instead.
@@ -110,6 +112,7 @@ export function createMainWindow(store: SettingsStore): BrowserWindow {
   });
   win.on('closed', () => {
     mainWindow = null;
+    pipWindow?.dismiss();
     closeSettingsWindow();
   });
   return win;
@@ -121,6 +124,11 @@ function buildMenu(): void {
       label: 'TTD',
       submenu: [
         { label: 'Settings', accelerator: 'Ctrl+,', click: () => openSettingsWindow() },
+        {
+          label: 'Picture-in-picture',
+          accelerator: 'Ctrl+Shift+P',
+          click: () => (pipWindow?.isOpen() ? pipWindow.close() : pipWindow?.open()),
+        },
         {
           label: 'DevTools',
           accelerator: 'Ctrl+Shift+I',
@@ -165,6 +173,12 @@ if (isPrimary) app.whenReady().then(async () => {
     },
   );
   queueService.attach(mainWindow.webContents);
+  pipWindow = new PipWindow(mainWindow, queueService, store, ICON);
+  // The player's PiP button (plugins/pip.ts), from YouTube in the main window only.
+  ipcMain.on('pip:open', (event) => {
+    if (event.sender !== mainWindow?.webContents || !/^https:\/\/www\.youtube\.com\//.test(event.senderFrame?.url ?? '')) return;
+    pipWindow?.open();
+  });
   setInterval(() => history.flush(), 30_000);
   app.on('before-quit', () => queueService?.flush());
 
