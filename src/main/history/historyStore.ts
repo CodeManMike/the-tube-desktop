@@ -51,6 +51,15 @@ export class HistoryStore {
     return this.entries.get(videoId);
   }
 
+  // Videos watched at least `thresholdPercent` of the way, most recent first (Hide watched).
+  watchedIds(thresholdPercent: number, limit = 5000): string[] {
+    return [...this.entries.values()]
+      .filter((e) => e.durationSec > 0 && (e.watchedSec / e.durationSec) * 100 >= thresholdPercent)
+      .sort((a, b) => b.lastWatched - a.lastWatched)
+      .slice(0, limit)
+      .map((e) => e.videoId);
+  }
+
   flush(): boolean {
     if (!this.dirty) return true;
     const ok = writeFileAtomic(this.file, JSON.stringify({ version: 1, entries: [...this.entries.values()] }));

@@ -32,6 +32,9 @@ export type Plugin = {
   transforms?: Partial<Record<Endpoint, Transform | Transform[]>>;
   css?: string;
   pageScript?: (settings: Record<string, unknown>) => void;
+  // Settings read from another plugin, so the user sets one number in one place
+  // (e.g. Hide watched uses the queue's "Counts as watched at").
+  borrows?: Record<string, { plugin: string; key: string }>;
   // Runs at document start, before YouTube's own scripts.
   earlyScript?: (settings: Record<string, unknown>) => void;
   // Self-contained helpers the page script can call as globalThis.__ttdFns[name].

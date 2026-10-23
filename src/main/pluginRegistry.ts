@@ -40,7 +40,7 @@ export class PluginRegistry {
       }
       return {
         id: p.manifest.id,
-        settings: this.store.values(p.manifest.id, p.manifest.settings),
+        settings: { ...this.store.values(p.manifest.id, p.manifest.settings), ...this.borrowed(p) },
         transforms,
         css: p.css,
         script: p.pageScript && asExpression(p.pageScript),
@@ -50,6 +50,15 @@ export class PluginRegistry {
         }),
       };
     });
+  }
+
+  private borrowed(p: Plugin): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const [key, from] of Object.entries(p.borrows ?? {})) {
+      const owner = this.plugins.find((o) => o.manifest.id === from.plugin);
+      if (owner) out[key] = this.store.values(owner.manifest.id, owner.manifest.settings)[from.key];
+    }
+    return out;
   }
 
   // Spec §6: a plugin that keeps failing is off for the rest of the session.

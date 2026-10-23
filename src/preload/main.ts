@@ -26,3 +26,8 @@ if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('tt
 if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('ttdSkip', {
   segments: (videoId: string) => ipcRenderer.invoke('skip:segments', videoId),
 });
+
+// TTD's own watch history, for Hide watched.
+if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('ttdHistory', {
+  watched: (threshold: number) => ipcRenderer.invoke('history:watched', threshold),
+});

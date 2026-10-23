@@ -203,6 +203,15 @@ if (isPrimary) app.whenReady().then(async () => {
     }
     return sponsorBlock.segments(videoId);
   });
+  // Hide watched (plugins/hideWatched.ts): TTD's own history, for the main window only.
+  ipcMain.handle('history:watched', (event, threshold: unknown) => {
+    const ok = event.sender === mainWindow?.webContents && /^https:\/\/www\.youtube\.com\//.test(event.senderFrame?.url ?? '');
+    if (!ok || typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold < 50 || threshold > 100) {
+      console.warn('[history] ignored an invalid watched-list request');
+      return [];
+    }
+    return history.watchedIds(threshold);
+  });
   setInterval(() => history.flush(), 30_000);
   app.on('before-quit', () => queueService?.flush());
 

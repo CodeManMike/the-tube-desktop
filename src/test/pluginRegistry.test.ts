@@ -93,3 +93,13 @@ test('a plugin disabled for the session is left out of pip entries too', () => {
   reg.disableForSession('b');
   assert.deepEqual(reg.pageEntries('pip'), []);
 });
+
+test('a plugin can borrow another plugin setting', () => {
+  const s = store();
+  const owner = plugin('queue', { manifest: { id: 'queue', name: 'q', defaultEnabled: true, settings: [{ key: 'watchedPercent', label: 'w', type: 'number', default: 80, min: 50, max: 100 }] } });
+  const borrower = plugin('hw', { borrows: { watchedPercent: { plugin: 'queue', key: 'watchedPercent' } } });
+  const reg = new PluginRegistry([owner, borrower], s);
+  assert.equal(reg.pageEntries().find((e) => e.id === 'hw')!.settings.watchedPercent, 80);
+  s.setValue('queue', owner.manifest.settings[0], 90);
+  assert.equal(reg.pageEntries().find((e) => e.id === 'hw')!.settings.watchedPercent, 90);
+});
