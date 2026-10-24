@@ -30,7 +30,7 @@ const HOME = 'https://www.youtube.com';
 const ELECTRON_UA = app.userAgentFallback;
 app.userAgentFallback = ELECTRON_UA
   .replace(/ Electron\/\S+/, '')
-  // Electron adds the product name without spaces ("TheTubeDesktop/1.0.0").
+  // Electron adds the product name without spaces ("TheTubeDesktop/1.0.1").
   .replace(/ (TheTubeDesktop|the-tube(-desktop)?)\/\S+/i, '');
 const SIGNIN_URLS = ['https://accounts.google.com/*', 'https://accounts.youtube.com/*'];
 
