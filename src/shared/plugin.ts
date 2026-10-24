@@ -3,7 +3,7 @@ import type { SettingsStore } from '../main/settingsStore';
 import { SettingDef } from './settings';
 
 // Where a transform applies: an InnerTube endpoint, or the data embedded in the HTML.
-export type Endpoint = 'browse' | 'next' | 'player' | 'search' | 'initialData' | 'initialPlayerResponse';
+export type Endpoint = 'browse' | 'next' | 'player' | 'search' | 'guide' | 'initialData' | 'initialPlayerResponse';
 
 // Runs inside the page, serialised with toString(): it must not reference anything outside its body.
 // What a response is for: its endpoint, and for /browse the page asked for (browseId), which

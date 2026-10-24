@@ -40,6 +40,7 @@ const COPY: Record<string, Copy> = {
   lowPower: { name: 'Low power (H.264)', hint: 'Uses less CPU, but caps every video at 1080p without HDR.' },
   tray: { name: 'Tray icon', hint: NONE, settings: { closeToTray: { label: 'Keep running in the tray when closed', hint: NONE } } },
   startup: { name: 'Start with Windows', hint: NONE },
+  settingsLink: { name: 'TTD settings in the sidebar', hint: 'Ctrl+, and the tray icon open Settings too.' },
   hotkeys: {
     name: 'Global hotkeys',
     hint: "Work even when TTD isn't focused.",

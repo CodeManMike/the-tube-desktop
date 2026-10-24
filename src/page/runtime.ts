@@ -94,7 +94,7 @@ export function pageRuntime(entries: RuntimeEntry[]): void {
   const endpointOf = (url: unknown): string | undefined => {
     if (typeof url !== 'string') return undefined;
     try {
-      const m = new URL(url, location.href).pathname.match(/^\/youtubei\/v1\/(browse|next|player|search)$/);
+      const m = new URL(url, location.href).pathname.match(/^\/youtubei\/v1\/(browse|next|player|search|guide)$/);
       return m && wants(m[1]) ? m[1] : undefined;
     } catch {
       return undefined;

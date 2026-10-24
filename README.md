@@ -32,7 +32,7 @@ I built it for myself first. It's Windows only, and it's free.
 - **Sign-out warning.** If YouTube signs you out, TTD tells you instead of quietly showing you a signed-out home page.
 - **Voice search** works, using YouTube's own microphone button.
 
-Everything is a plugin you can switch off in Settings (`Ctrl+,`). If a plugin ever breaks on a page, TTD turns it off for that page and YouTube carries on as normal.
+Everything is a plugin you can switch off in Settings. Open it from **TTD settings** at the bottom of YouTube's left sidebar, from the tray icon, or with `Ctrl+,`. If a plugin ever breaks on a page, TTD turns it off for that page and YouTube carries on as normal.
 
 <p align="center">
   <img src="docs/screenshots/pip.png" width="430" alt="The picture-in-picture window" />
