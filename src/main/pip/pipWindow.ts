@@ -8,6 +8,7 @@ import { Playing } from '../queue/model';
 import { QueueService } from '../queue/queueService';
 import { SettingsStore } from '../settingsStore';
 import { Rect } from '../windowState';
+import { applyAudioScript, AudioState, audioOf } from './audio';
 import { fitAspect, MIN_PIP_WIDTH, moveBy, openingBounds, resizeFromCorner, withTimeout } from './geometry';
 
 const PLAYER = `document.querySelector('#movie_player')`;
@@ -18,7 +19,9 @@ const NOW_PLAYING = `(() => {
   const d = p && p.getVideoData && p.getVideoData();
   const shown = location.pathname === '/watch' || !!document.querySelector('ytd-miniplayer[active], ytd-app[miniplayer-is-active]');
   const loaded = [1, 2, 3].includes(p && p.getPlayerState && p.getPlayerState());
-  return shown && loaded && d && d.video_id ? { videoId: d.video_id, timeSec: p.getCurrentTime() } : null;
+  return shown && loaded && d && d.video_id
+    ? { videoId: d.video_id, timeSec: p.getCurrentTime(), muted: !!(p.isMuted && p.isMuted()), volume: p.getVolume ? p.getVolume() : 100 }
+    : null;
 })()`;
 const WATCH = /^https:\/\/www\.youtube\.com\/watch\?/;
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -35,6 +38,8 @@ export class PipWindow {
   private ratio = 16 / 9;
   private drag: { mode: 'move' | 'resize'; start: Rect; x: number; y: number } | null = null;
   private last: Playing | null = null;
+  // The main player's mute and volume when PiP opened, handed to PiP's player once it's ready.
+  private openAudio: AudioState | null = null;
 
   constructor(
     private readonly main: BrowserWindow,
@@ -50,7 +55,7 @@ export class PipWindow {
       queue.handlePip(raw);
     });
     ipcMain.on('pip:ready', (event) => {
-      if (this.fromPip(event)) this.send({ onTop: this.win!.isAlwaysOnTop() });
+      if (this.fromPip(event)) this.send({ onTop: this.win!.isAlwaysOnTop(), ...(this.openAudio && { audio: this.openAudio }) });
     });
     ipcMain.on('pip:control', (event, msg) => {
       if (this.fromPip(event)) this.control(msg);
@@ -160,6 +165,9 @@ export class PipWindow {
         },
       });
       this.win = win;
+      this.openAudio = audioOf(at);
+      // A window muted as a whole (not just its player) stays muted in PiP too.
+      win.webContents.setAudioMuted(this.main.webContents.isAudioMuted());
       this.handoff = true;
       this.last = at;
       this.ratio = 16 / 9;
@@ -185,8 +193,9 @@ export class PipWindow {
         closing = true;
         this.save(); // before the wait: the window may be gone after it
         let resumeAt: Playing | null = this.last;
+        let now: unknown = null;
         try {
-          const now = await withTimeout(win.webContents.executeJavaScript(NOW_PLAYING), 500, null);
+          now = await withTimeout(win.webContents.executeJavaScript(NOW_PLAYING), 500, null);
           if (isPlaying(now)) resumeAt = now;
         } finally {
           if (!win.isDestroyed()) win.destroy();
@@ -195,6 +204,9 @@ export class PipWindow {
             // than play on unseen.
             if (!this.main.isDestroyed() && !this.main.isVisible()) this.main.show();
             this.queue.resumeInMain(resumeAt);
+            // PiP's mute and volume go back with the video.
+            const audio = audioOf(now);
+            if (audio) this.main.webContents.executeJavaScript(applyAudioScript(audio)).catch(() => {});
           }
           else this.queue.setPlayer(null);
           console.log(`[pip] closed${this.handoff && resumeAt ? `; main resumes ${resumeAt.videoId} at ${resumeAt.timeSec.toFixed(1)}s` : ''}`);
