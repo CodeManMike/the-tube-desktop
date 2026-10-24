@@ -220,6 +220,11 @@ if (isPrimary) app.whenReady().then(async () => {
     if (event.sender !== mainWindow?.webContents || !/^https:\/\/www\.youtube\.com\//.test(event.senderFrame?.url ?? '')) return;
     pipWindow?.open();
   });
+  // The sidebar's "TTD settings" entry (plugins/settingsLink.ts), likewise main window only.
+  ipcMain.on('settings:open', (event) => {
+    if (event.sender !== mainWindow?.webContents || !/^https:\/\/www\.youtube\.com\//.test(event.senderFrame?.url ?? '')) return;
+    openSettingsWindow();
+  });
   // SponsorBlock lookups for the main window and PiP (plugins/sponsorBlock.ts). Made here,
   // on the default session, so no YouTube cookies go with them.
   const sponsorBlock = new SponsorBlockClient(async (url) => {

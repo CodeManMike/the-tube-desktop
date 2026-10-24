@@ -14,5 +14,6 @@ import { theme } from './theme';
 import { tray } from './tray';
 import { queue } from './queue';
 import { ryd } from './ryd';
+import { settingsLink } from './settingsLink';
 
-export const ALL_PLUGINS: Plugin[] = [hideShorts, queue, pip, sponsorBlock, adSkip, lowPower, pinnedQuality, hideWatched, channelBlocklist, ryd, theme, hotkeys, tray, startup, ...(process.env.TTD_DEV_BREAK === '1' ? [devBreak] : [])];
+export const ALL_PLUGINS: Plugin[] = [hideShorts, queue, pip, sponsorBlock, adSkip, lowPower, pinnedQuality, hideWatched, channelBlocklist, ryd, theme, settingsLink, hotkeys, tray, startup, ...(process.env.TTD_DEV_BREAK === '1' ? [devBreak] : [])];

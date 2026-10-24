@@ -32,7 +32,7 @@ I built it for myself first. It's Windows only, and it's free.
 - **Sign-out warning.** If YouTube signs you out, TTD tells you instead of quietly showing you a signed-out home page.
 - **Voice search** works, using YouTube's own microphone button.
 
-Everything is a plugin you can switch off in Settings (`Ctrl+,`). If a plugin ever breaks on a page, TTD turns it off for that page and YouTube carries on as normal.
+Everything is a plugin you can switch off in Settings. Open it from **TTD settings** at the bottom of YouTube's left sidebar, from the tray icon, or with `Ctrl+,`. If a plugin ever breaks on a page, TTD turns it off for that page and YouTube carries on as normal.
 
 <p align="center">
   <img src="docs/screenshots/pip.png" width="430" alt="The picture-in-picture window" />
@@ -77,8 +77,6 @@ Switch either off in Settings and nothing goes to them. TTD has no analytics and
 TTD is free and I'm a solo developer. If it makes your YouTube better and you'd like to say thanks, a coffee helps me keep working on it.
 
 <a href="https://ko-fi.com/J4O422SFGR"><img height="36" style="border:0px;height:36px;" src="https://storage.ko-fi.com/cdn/kofi6.png?v=6" alt="Buy Me a Coffee at ko-fi.com" /></a>
-
-There's also a Ko-fi link in the Settings window and the tray menu.
 
 Bugs and ideas are welcome as [GitHub issues](https://github.com/CodeManMike/the-tube-desktop/issues).
 

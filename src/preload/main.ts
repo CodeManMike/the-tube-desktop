@@ -20,6 +20,10 @@ if (location.hostname === 'www.youtube.com') contextBridge.exposeInMainWorld('tt
   pip: {
     open: () => ipcRenderer.send('pip:open'),
   },
+  // The sidebar's "TTD settings" entry (plugins/settingsLink.ts).
+  settings: {
+    open: () => ipcRenderer.send('settings:open'),
+  },
 });
 
 // SponsorBlock segments for the skipping plugin (main window and PiP alike).
