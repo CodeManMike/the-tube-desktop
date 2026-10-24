@@ -78,8 +78,6 @@ TTD is free and I'm a solo developer. If it makes your YouTube better and you'd 
 
 <a href="https://ko-fi.com/J4O422SFGR"><img height="36" style="border:0px;height:36px;" src="https://storage.ko-fi.com/cdn/kofi6.png?v=6" alt="Buy Me a Coffee at ko-fi.com" /></a>
 
-There's also a Ko-fi link in the Settings window and the tray menu.
-
 Bugs and ideas are welcome as [GitHub issues](https://github.com/CodeManMike/the-tube-desktop/issues).
 
 ## Building from source
