@@ -31,6 +31,8 @@ export type PlayerControls = {
   isPipOpen(): boolean;
   showHide(): void;
   openSettings(): void;
+  // Opens the Ko-fi page in the default browser.
+  support(): void;
   quit(): void;
   nowPlaying(): string | null;
 };

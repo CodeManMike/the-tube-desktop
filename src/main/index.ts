@@ -17,6 +17,8 @@ import { PipWindow } from './pip/pipWindow';
 import { SponsorBlockClient } from './skip/sponsorBlock';
 import { createPlayerControls, revealWindow } from './desktop/playerControls';
 import { SignInWatcher } from './account/signInWatcher';
+import { consumeInstallOptions } from './installOptions';
+import { KOFI_URL } from '../shared/links';
 import { RydClient } from './ryd';
 
 const ICON = path.join(app.getAppPath(), 'assets', 'icons', 'favicon.ico');
@@ -28,7 +30,7 @@ const HOME = 'https://www.youtube.com';
 const ELECTRON_UA = app.userAgentFallback;
 app.userAgentFallback = ELECTRON_UA
   .replace(/ Electron\/\S+/, '')
-  // Electron adds the product name without spaces ("TheTubeDesktop/0.0.1").
+  // Electron adds the product name without spaces ("TheTubeDesktop/1.0.0").
   .replace(/ (TheTubeDesktop|the-tube(-desktop)?)\/\S+/i, '');
 const SIGNIN_URLS = ['https://accounts.google.com/*', 'https://accounts.youtube.com/*'];
 
@@ -184,6 +186,8 @@ if (isPrimary) app.whenReady().then(async () => {
 
   const store = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'));
   settingsStore = store;
+  // A fresh install leaves the installer's "Choose your settings" answers for the first run.
+  consumeInstallOptions(path.join(app.getPath('userData'), 'install-options.json'), store, ALL_PLUGINS);
   const registry = new PluginRegistry(ALL_PLUGINS, store);
 
   buildMenu();
@@ -345,6 +349,7 @@ if (isPrimary) app.whenReady().then(async () => {
     pip: { isOpen: () => !!pipWindow?.isOpen(), open: () => void pipWindow?.open(), close: () => pipWindow?.close() },
     mainWindow: () => mainWindow,
     openSettings: () => openSettingsWindow(),
+    support: () => openInBrowser(KOFI_URL),
     quit: () => app.quit(),
     nowPlaying: () => queueService?.nowPlaying() ?? null,
   });

@@ -9,6 +9,7 @@ type Bridge = {
   list(): Promise<Item[]>;
   setEnabled(id: string, on: boolean): Promise<void>;
   setValue(id: string, key: string, value: unknown): Promise<void>;
+  support(): void;
 };
 
 const bridge = (window as unknown as { ttd: Bridge }).ttd;
@@ -99,6 +100,10 @@ const render = () =>
     document.getElementById('plugins')!.replaceChildren(...items.map(card));
   });
 render();
+document.getElementById('kofi')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  bridge.support();
+});
 addEventListener('focus', () => {
   if (!document.activeElement || document.activeElement === document.body) render();
 });

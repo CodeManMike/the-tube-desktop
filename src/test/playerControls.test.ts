@@ -13,6 +13,7 @@ function deps(over: any = {}) {
     pip: { isOpen: () => open, open: () => { open = true; }, close: () => { open = false; } },
     mainWindow: () => null,
     openSettings: () => {},
+    support: () => {},
     quit: () => {},
     nowPlaying: () => 'Song',
     ...over,
