@@ -244,6 +244,14 @@ export class QueueModel {
 
   // Next (PiP or panel): exactly what the video ending would do, so detours return.
   next(videoId: string): Command {
+    // Watching something outside the queue (browsing, not a detour): go to the queue item
+    // after the current one, as YouTube's own Next button does in TTD.
+    if (videoId !== this.s.detourVideoId && videoId !== this.currentVideoId() && this.s.current !== null) {
+      if (this.s.current + 1 >= this.s.items.length) return null;
+      this.s.current++;
+      this.leaveDetour();
+      return navigate(this.s.items[this.s.current].videoId);
+    }
     return this.ended(videoId, null);
   }
 
@@ -251,7 +259,9 @@ export class QueueModel {
   // on the first item, restart it.
   previous(videoId: string): Command {
     if (videoId === this.s.detourVideoId) return this.back();
-    if (videoId !== this.currentVideoId() || this.s.current === null) return null;
+    if (this.s.current === null) return null;
+    // Outside the queue: back to where the queue is.
+    if (videoId !== this.currentVideoId()) return navigate(this.s.items[this.s.current].videoId);
     if (this.s.current === 0) return navigate(videoId, 0);
     this.s.current--;
     this.leaveDetour();

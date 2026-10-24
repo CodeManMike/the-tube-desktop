@@ -121,3 +121,10 @@ test('a text setting keeps strings up to maxLength and falls back otherwise', ()
   assert.equal(validateSetting(def, 'x'.repeat(11)), '');
   assert.equal(validateSetting(def, 42), '');
 });
+
+test('account state round-trips and defaults to not signed in', () => {
+  const file = tmpFile();
+  assert.deepEqual(new SettingsStore(file).getAccount(), { wasSignedIn: false });
+  new SettingsStore(file).setAccount({ wasSignedIn: true });
+  assert.deepEqual(new SettingsStore(file).getAccount(), { wasSignedIn: true });
+});

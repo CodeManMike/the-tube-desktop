@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, components, net, screen, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, components, net, screen, session, shell } from 'electron';
 import path from 'path';
 import { PARTITION } from './config';
 import { migrateLegacyProfile } from './migrate';
@@ -15,6 +15,8 @@ import { QueueService } from './queue/queueService';
 import { QueueStore } from './queue/queueStore';
 import { PipWindow } from './pip/pipWindow';
 import { SponsorBlockClient } from './skip/sponsorBlock';
+import { createPlayerControls, revealWindow } from './desktop/playerControls';
+import { SignInWatcher } from './account/signInWatcher';
 import { RydClient } from './ryd';
 
 const ICON = path.join(app.getAppPath(), 'assets', 'icons', 'favicon.ico');
@@ -36,6 +38,9 @@ let mainWindow: BrowserWindow | null = null;
 let bundle: PageBundleHandle | null = null;
 let queueService: QueueService | null = null;
 let pipWindow: PipWindow | null = null;
+// Tray "Keep running in the tray when closed": closing hides the window until a real quit.
+let hideOnClose = false;
+let quitting = false;
 
 // Two instances on one profile can't share the cookie database, so a second one
 // would start signed out. Hand over to the running window instead.
@@ -46,9 +51,8 @@ if (!isPrimary) {
 } else {
   console.log('[migrate]', migrateLegacyProfile(path.join(app.getPath('appData'), 'Electron'), app.getPath('userData')));
   app.on('second-instance', () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    // Opening TTD again brings it back, even when it's hidden in the tray.
+    if (mainWindow) revealWindow(mainWindow);
   });
 }
 
@@ -93,7 +97,14 @@ export function createMainWindow(store: SettingsStore): BrowserWindow {
   win.setMenuBarVisibility(false);
   if (saved?.maximized) win.maximize();
 
-  win.on('close', () => store.setWindowState({ ...win.getNormalBounds(), maximized: win.isMaximized() }));
+  win.on('close', (event) => {
+    if (hideOnClose && !quitting) {
+      event.preventDefault();
+      win.hide();
+      return;
+    }
+    store.setWindowState({ ...win.getNormalBounds(), maximized: win.isMaximized() });
+  });
 
   // Only YouTube and Google sign-in load in the signed-in session. Web links open in the
   // default browser; every other scheme is dropped (see routeUrl).
@@ -248,6 +259,33 @@ if (isPrimary) app.whenReady().then(async () => {
   setInterval(() => history.flush(), 30_000);
   app.on('before-quit', () => queueService?.flush());
 
+  // Sign-out detection (spec §2.1): one prompt when someone who was signed in gets signed out.
+  const SIGN_IN_URL =
+    'https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26next%3D%252F';
+  const signIn = new SignInWatcher({
+    wasSignedIn: store.getAccount().wasSignedIn,
+    save: (v) => store.setAccount({ wasSignedIn: v }),
+    hasSidCookie: async () => (await session.fromPartition(PARTITION).cookies.get({ domain: '.youtube.com', name: 'SID' })).length > 0,
+    prompt: async () => {
+      if (!mainWindow) return;
+      const { response } = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: 'The Tube Desktop',
+        message: "You've been signed out of YouTube",
+        buttons: ['Sign in', 'Reload', 'Not now'],
+        defaultId: 0,
+        cancelId: 2,
+        noLink: true,
+      });
+      if (response === 0) mainWindow?.loadURL(SIGN_IN_URL).catch(() => {});
+      else if (response === 1) mainWindow?.webContents.reload();
+      else signIn.dismissed();
+    },
+  });
+  session.fromPartition(PARTITION).cookies.on('changed', (_event, cookie, cause, removed) => {
+    if (removed && cause !== 'overwrite' && cookie.domain === '.youtube.com') signIn.cookieRemoved(cookie.name);
+  });
+
   // Diagnostic: is the saved session present, and does YouTube accept it?
   mainWindow.webContents.on('did-finish-load', async () => {
     const wc = mainWindow!.webContents;
@@ -259,6 +297,7 @@ if (isPrimary) app.whenReady().then(async () => {
       )
       .catch(() => ({ loggedIn: 'n/a', rewrite: 'n/a' }));
     console.log('[session]', wc.getURL(), 'SID cookies:', sid.length, 'LOGGED_IN:', page.loggedIn, 'rewrite active:', page.rewrite);
+    if (wc.getURL().startsWith('https://www.youtube.com/')) signIn.pageLoaded(typeof page.loggedIn === 'boolean' ? page.loggedIn : null);
   });
 
   // A plugin the page turned off after repeated failures stays off for this session.
@@ -299,7 +338,27 @@ if (isPrimary) app.whenReady().then(async () => {
   // A settings change rebuilds the page bundle and reloads YouTube; debounced so a
   // burst of edits causes one reload.
   let reloadTimer: NodeJS.Timeout | undefined;
-  registerSettingsIpc(registry, store, () => {
+  // Tray, hotkeys and anything else with main-process parts act through these controls.
+  const controls = createPlayerControls({
+    activeContents: () => pipWindow?.contents() ?? mainWindow?.webContents ?? null,
+    queue: { step: (dir) => queueService?.step(dir) },
+    pip: { isOpen: () => !!pipWindow?.isOpen(), open: () => void pipWindow?.open(), close: () => pipWindow?.close() },
+    mainWindow: () => mainWindow,
+    openSettings: () => openSettingsWindow(),
+    quit: () => app.quit(),
+    nowPlaying: () => queueService?.nowPlaying() ?? null,
+  });
+  const hookContext = {
+    mainWindow,
+    store,
+    log: (msg: string) => console.log(msg),
+    controls,
+    shortcuts: { register: (a: string, fn: () => void) => globalShortcut.register(a, fn), unregister: (a: string) => globalShortcut.unregister(a) },
+    setHideOnClose: (on: boolean) => (hideOnClose = on),
+  };
+  registerSettingsIpc(registry, store, (pluginId) => {
+    // Only the changed plugin's main hook restarts (the tray icon isn't recreated for, say, a theme change).
+    registry.restartMainHooks(hookContext, pluginId);
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(async () => {
       try {
@@ -310,7 +369,7 @@ if (isPrimary) app.whenReady().then(async () => {
       }
     }, 400);
   });
-  registry.runMainHooks({ mainWindow, store, log: (msg) => console.log(msg) });
+  registry.restartMainHooks(hookContext);
 
   // YouTube redirects the first load (?themeRefresh=1), which aborts the original navigation.
   mainWindow.loadURL(HOME).catch((err) => {
@@ -318,4 +377,6 @@ if (isPrimary) app.whenReady().then(async () => {
   });
 });
 
+app.on('before-quit', () => (quitting = true));
+app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => app.quit());

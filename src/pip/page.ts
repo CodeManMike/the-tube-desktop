@@ -132,6 +132,15 @@ export function pipPageScript(): void {
 
   // The player appears after the page script runs; hook it once it's there.
   let hooked = false;
+  let pendingAudio: { muted: boolean; volume: number } | null = null;
+  const applyAudio = () => {
+    const p = player();
+    if (!pendingAudio || !p?.setVolume) return;
+    p.setVolume(pendingAudio.volume);
+    if (pendingAudio.muted) p.mute();
+    else p.unMute();
+    pendingAudio = null;
+  };
   let lastNav = '';
   const reportNavigation = () => {
     const id = new URL(location.href).searchParams.get('v');
@@ -147,6 +156,7 @@ export function pipPageScript(): void {
     const p = player();
     if (hooked || !p?.addEventListener) return;
     hooked = true;
+    applyAudio();
     p.addEventListener('onStateChange', (st: number) => {
       setIcon(playPause, st === 1 ? 'pause' : 'play');
       const id = videoId();
@@ -173,6 +183,11 @@ export function pipPageScript(): void {
   // Commands from the queue: the same seek-or-navigate as the main window's queue script.
   bridge.onCommand((cmd: any) => {
     if (cmd && typeof cmd.onTop === 'boolean') pin.classList.toggle('on', cmd.onTop);
+    // The main window's mute and volume, applied once this player exists.
+    if (cmd?.audio && typeof cmd.audio.muted === 'boolean' && Number.isFinite(cmd.audio.volume)) {
+      pendingAudio = cmd.audio;
+      applyAudio();
+    }
     const nav = cmd?.navigate;
     if (!nav || typeof nav.videoId !== 'string') return;
     const t = Math.floor(nav.timeSec || 0);
