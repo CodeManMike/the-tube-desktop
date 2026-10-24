@@ -328,3 +328,23 @@ test('previous on a detour returns to where it started', () => {
   m.navigated(E, { videoId: A, timeSec: 42 });
   assert.deepEqual(m.previous(E), { navigate: { videoId: A, timeSec: 42 } });
 });
+
+test('next from a video outside the queue goes to the queue item after the current one', () => {
+  const m = model(); m.add(v(A)); m.add(v(B)); m.add(v(C)); m.jump(m.state().items[0].uid);
+  m.navigated(E, null); // browsing: not a detour
+  assert.deepEqual(m.next(E), { navigate: { videoId: B, timeSec: 0 } });
+  assert.equal(m.state().current, 1);
+});
+
+test('previous from a video outside the queue goes back to the current queue item', () => {
+  const m = model(); m.add(v(A)); m.add(v(B)); m.jump(m.state().items[1].uid);
+  m.navigated(E, null);
+  assert.deepEqual(m.previous(E), { navigate: { videoId: B, timeSec: 0 } });
+  assert.equal(m.state().current, 1);
+});
+
+test('next or previous outside an empty queue does nothing', () => {
+  const m = model();
+  assert.equal(m.next(E), null);
+  assert.equal(m.previous(E), null);
+});
