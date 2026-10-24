@@ -5,6 +5,14 @@
 // EVS account (python -m castlabs_evs.account reauth).
 const { spawn } = require('child_process');
 
+// castLabs' upload (the whole 235 MB app) normally takes about 25 s, but now and then it
+// stalls forever with no error. A fresh attempt usually goes straight through, so each
+// attempt gets a time limit and signing is retried a few times before the build gives up.
+const SIGN_ATTEMPTS = 4;
+const SIGN_TIMEOUT_MS = 120_000;
+const VERIFY_TIMEOUT_MS = 60_000;
+const TIMED_OUT = -2;
+
 function buildCommands(appOutDir) {
   return [
     ['python', ['-m', 'castlabs_evs.vmp', 'sign-pkg', appOutDir]],
@@ -12,19 +20,39 @@ function buildCommands(appOutDir) {
   ];
 }
 
-function run(cmd, args) {
+// Resolves with the exit code, -1 if it couldn't start, or TIMED_OUT after killing it.
+function run(cmd, args, timeoutMs) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { stdio: 'inherit', windowsHide: true });
-    child.on('error', () => resolve(-1));
-    child.on('close', (code) => resolve(code ?? -1));
+    let done = false;
+    const finish = (code) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(code);
+    };
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(TIMED_OUT);
+    }, timeoutMs);
+    child.on('error', () => finish(-1));
+    child.on('close', (code) => finish(code ?? -1));
   });
 }
 
-async function signAndVerify(appOutDir, runner = run) {
-  for (const [cmd, args] of buildCommands(appOutDir)) {
-    const code = await runner(cmd, args);
-    if (code !== 0) throw new Error(`VMP signing failed: ${cmd} ${args.join(' ')} exited ${code}`);
+const describe = (code) => (code === TIMED_OUT ? 'timed out' : `exited ${code}`);
+
+async function signAndVerify(appOutDir, runner = run, log = console.log) {
+  const [[signCmd, signArgs], [verifyCmd, verifyArgs]] = buildCommands(appOutDir);
+  let code;
+  for (let attempt = 1; attempt <= SIGN_ATTEMPTS; attempt++) {
+    code = await runner(signCmd, signArgs, SIGN_TIMEOUT_MS);
+    if (code === 0) break;
+    log(`[vmp] signing attempt ${attempt} of ${SIGN_ATTEMPTS} ${describe(code)}${attempt < SIGN_ATTEMPTS ? ', trying again' : ''}`);
   }
+  if (code !== 0) throw new Error(`VMP signing failed: ${signCmd} ${signArgs.join(' ')} ${describe(code)} ${SIGN_ATTEMPTS} times`);
+  code = await runner(verifyCmd, verifyArgs, VERIFY_TIMEOUT_MS);
+  if (code !== 0) throw new Error(`VMP signing failed: ${verifyCmd} ${verifyArgs.join(' ')} ${describe(code)}`);
 }
 
 module.exports = async function afterSign(context) {
@@ -33,3 +61,6 @@ module.exports = async function afterSign(context) {
 module.exports.default = module.exports;
 module.exports.buildCommands = buildCommands;
 module.exports.signAndVerify = signAndVerify;
+module.exports.run = run;
+module.exports.SIGN_ATTEMPTS = SIGN_ATTEMPTS;
+module.exports.TIMED_OUT = TIMED_OUT;
