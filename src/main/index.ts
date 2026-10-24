@@ -17,6 +17,8 @@ import { PipWindow } from './pip/pipWindow';
 import { SponsorBlockClient } from './skip/sponsorBlock';
 import { createPlayerControls, revealWindow } from './desktop/playerControls';
 import { SignInWatcher } from './account/signInWatcher';
+import { consumeInstallOptions } from './installOptions';
+import { KOFI_URL } from '../shared/links';
 import { RydClient } from './ryd';
 
 const ICON = path.join(app.getAppPath(), 'assets', 'icons', 'favicon.ico');
@@ -184,6 +186,8 @@ if (isPrimary) app.whenReady().then(async () => {
 
   const store = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'));
   settingsStore = store;
+  // A fresh install leaves the installer's "Choose your settings" answers for the first run.
+  consumeInstallOptions(path.join(app.getPath('userData'), 'install-options.json'), store, ALL_PLUGINS);
   const registry = new PluginRegistry(ALL_PLUGINS, store);
 
   buildMenu();
@@ -345,6 +349,7 @@ if (isPrimary) app.whenReady().then(async () => {
     pip: { isOpen: () => !!pipWindow?.isOpen(), open: () => void pipWindow?.open(), close: () => pipWindow?.close() },
     mainWindow: () => mainWindow,
     openSettings: () => openSettingsWindow(),
+    support: () => openInBrowser(KOFI_URL),
     quit: () => app.quit(),
     nowPlaying: () => queueService?.nowPlaying() ?? null,
   });

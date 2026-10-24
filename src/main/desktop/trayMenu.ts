@@ -15,6 +15,7 @@ export function trayMenuTemplate(state: { visible: boolean; pipOpen: boolean }, 
     { label: state.pipOpen ? 'Close picture-in-picture' : 'Picture-in-picture', click: () => c.togglePip() },
     { type: 'separator' },
     { label: 'Settings', click: () => c.openSettings() },
+    { label: 'Support TTD on Ko-fi', click: () => c.support() },
     { label: 'Quit', click: () => c.quit() },
   ];
 }

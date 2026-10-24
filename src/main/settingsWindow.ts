@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent, shell } from 'electron';
+import { KOFI_URL } from '../shared/links';
 import path from 'path';
 import { PluginRegistry } from './pluginRegistry';
 import { SettingsStore } from './settingsStore';
@@ -47,6 +48,10 @@ export function registerSettingsIpc(registry: PluginRegistry, store: SettingsSto
     return p;
   };
 
+  // The settings page's Ko-fi link; the address is fixed here, not taken from the page.
+  ipcMain.on('settings:support', (event) => {
+    if (win && event.sender === win.webContents) shell.openExternal(KOFI_URL).catch(() => {});
+  });
   ipcMain.handle('settings:list', (event) => {
     fromSettings(event);
     return registry.list().map((p) => ({ ...p, values: store.values(p.manifest.id, p.manifest.settings) }));

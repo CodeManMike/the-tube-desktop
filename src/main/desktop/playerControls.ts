@@ -23,6 +23,7 @@ export function createPlayerControls(deps: {
   pip: { isOpen(): boolean; open(): void; close(): void };
   mainWindow(): BrowserWindow | null;
   openSettings(): void;
+  support(): void;
   quit(): void;
   nowPlaying(): string | null;
 }): PlayerControls {
@@ -42,6 +43,7 @@ export function createPlayerControls(deps: {
       else revealWindow(win);
     },
     openSettings: () => deps.openSettings(),
+    support: () => deps.support(),
     quit: () => deps.quit(),
     nowPlaying: () => deps.nowPlaying(),
   };

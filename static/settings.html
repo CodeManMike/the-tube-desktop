@@ -19,6 +19,8 @@
       header { display: flex; align-items: center; gap: 12px; padding: 20px 24px 16px; }
       header img { width: 32px; height: 32px; }
       h1 { margin: 0; font-size: 20px; font-weight: 600; }
+      .kofi { margin-left: auto; padding: 6px 12px; border-radius: 16px; background: #72a4f2; color: #fff; font-weight: 600; font-size: 13px; text-decoration: none; }
+      .kofi:hover { background: #5b90e6; }
       main { padding: 0 24px 24px; display: grid; gap: 12px; }
       .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
       .head { display: flex; align-items: flex-start; gap: 12px; }
@@ -52,6 +54,7 @@
     <header>
       <img src="../assets/icons/favicon-64.png" alt="" />
       <h1>The Tube Desktop — Settings</h1>
+      <a id="kofi" class="kofi" href="#">♥ Support TTD on Ko-fi</a>
     </header>
     <main id="plugins"></main>
     <script src="../dist/settings/renderer.js"></script>
