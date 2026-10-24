@@ -10,7 +10,7 @@
   <a href="https://ko-fi.com/J4O422SFGR">Support it on Ko-fi</a>
 </p>
 
-<p align="center"><img src="docs/screenshots/main.jpg" width="880" alt="The Tube Desktop playing a video, with the queue open" /></p>
+<p align="center"><img src="docs/screenshots/demo.gif" width="880" alt="The Tube Desktop moving to the next video in its queue, then popping it out into a picture-in-picture window" /></p>
 
 The Tube Desktop (TTD) is the real desktop YouTube in its own window. Your account, your subscriptions and YouTube Premium all work as normal, and so do Movies, 4K and HDR. On top of that I added the things I kept wishing for: a queue that stays put while you browse, a picture-in-picture window that floats over everything, sponsor and ad skipping, dislike counts, and a tray icon with global hotkeys.
 
