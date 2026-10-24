@@ -45,11 +45,22 @@
       "icon": "assets/icons/favicon.ico"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
-      "createDesktopShortcut": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
-      "shortcutName": "The Tube Desktop"
+      "shortcutName": "The Tube Desktop",
+      "license": "LICENSE.md",
+      "include": "build/installer.nsh",
+      "installerIcon": "assets/icons/favicon.ico",
+      "uninstallerIcon": "assets/icons/favicon.ico",
+      "installerHeaderIcon": "assets/icons/favicon.ico",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "TheTubeDesktop-Setup-${version}.exe"
     },
     "afterSign": "scripts/vmp-sign.cjs"
   }
