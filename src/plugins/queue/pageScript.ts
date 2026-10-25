@@ -22,6 +22,9 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
   let currentOwner: { channelId: string; name: string } | null = null;
   let menuOpen = false;
   let topicInput = false;
+  // Clear asks once ("Clear 12?") before wiping, and gives up asking after a few seconds.
+  let clearArmed = false;
+  let clearTimer: ReturnType<typeof setTimeout> | undefined;
   // What's typed in the topic box, kept across re-renders (state updates rebuild the panel).
   let topicDraft = '';
   let playerHooked = false;
@@ -170,6 +173,25 @@ export function queuePageScript(_settings: Record<string, unknown>): void {
       render();
     });
     head.append(shuffleBtn);
+    if (s.items.length) {
+      const clearBtn = el('button', clearArmed ? 'ttd-queue-back ttd-queue-clear armed' : 'ttd-queue-back ttd-queue-clear', clearArmed ? `Clear ${s.items.length}?` : 'Clear');
+      clearBtn.title = clearArmed ? 'Click again to empty the queue' : 'Empty the queue';
+      clearBtn.addEventListener('click', () => {
+        clearTimeout(clearTimer);
+        if (clearArmed) {
+          clearArmed = false;
+          api.report({ type: 'action', action: 'clear' });
+          return;
+        }
+        clearArmed = true;
+        clearTimer = setTimeout(() => {
+          clearArmed = false;
+          render();
+        }, 4000);
+        render();
+      });
+      head.append(clearBtn);
+    } else clearArmed = false;
 
     const children: HTMLElement[] = [head];
     if (menuOpen) children.push(shuffleMenu(s));

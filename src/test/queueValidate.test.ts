@@ -97,3 +97,7 @@ test('pip events allow only navigated, progress, ended and next/previous', () =>
   assert.equal(validatePipEvent({ type: 'fetched', requestId: 'a', ok: true, items: [], continuation: null }), null);
   assert.equal(validatePipEvent({ type: 'action', action: 'next' }), null); // needs a videoId
 });
+
+test('clear is a valid action with no item', () => {
+  assert.deepEqual(validateEvent({ type: 'action', action: 'clear' }), { type: 'action', action: 'clear' });
+});
