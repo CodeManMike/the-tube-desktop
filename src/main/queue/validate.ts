@@ -19,12 +19,12 @@ export type PageEvent =
     }
   | { type: 'fetched'; requestId: string; ok: boolean; items: Candidate[]; continuation: string | null }
   | { type: 'shuffle'; action: 'creator' | 'addCreator' | 'topic' | 'stop'; channelId?: string; name?: string; query?: string }
-  | { type: 'action'; action: 'jump' | 'remove' | 'playNext' | 'back' | 'next' | 'previous'; uid?: string; videoId?: string }
+  | { type: 'action'; action: 'jump' | 'remove' | 'playNext' | 'back' | 'clear' | 'next' | 'previous'; uid?: string; videoId?: string }
   | { type: 'move'; uid: string; toIndex: number };
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 const MAX_PLAYLIST = 500;
-const ACTIONS = ['jump', 'remove', 'playNext', 'back'] as const;
+const ACTIONS = ['jump', 'remove', 'playNext', 'back', 'clear'] as const;
 // Steps relative to the playing video: they name it instead of a queue item.
 const STEP_ACTIONS = ['next', 'previous'] as const;
 const PIP_EVENT_TYPES = ['navigated', 'progress', 'ended', 'action'];

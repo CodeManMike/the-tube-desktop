@@ -348,3 +348,36 @@ test('next or previous outside an empty queue does nothing', () => {
   assert.equal(m.next(E), null);
   assert.equal(m.previous(E), null);
 });
+
+test('clear empties the queue, shuffle, playlist and return points', () => {
+  const m = model();
+  m.add(v(B), { videoId: A, timeSec: 0 });
+  m.add(v(C));
+  m.setShuffle({ kind: 'topic', query: 'lofi' });
+  m.navigated(D, { videoId: A, timeSec: 42 }); // a detour leaves a return point
+  m.clear();
+  const s = m.state();
+  assert.deepEqual(s.items, []);
+  assert.equal(s.current, null);
+  assert.equal(s.shuffle, null);
+  assert.equal(s.sourceListId, null);
+  assert.equal(s.detourVideoId, null);
+  assert.deepEqual(s.returnStack, []);
+});
+
+test('after clear, the video that was playing ending does nothing', () => {
+  const m = model();
+  m.add(v(B), { videoId: A, timeSec: 0 });
+  m.clear();
+  assert.equal(m.ended(A, v(C)), null);
+  assert.deepEqual(ids(m), []);
+});
+
+test('a new queue starts normally after clear', () => {
+  const m = model();
+  m.add(v(B), { videoId: A, timeSec: 0 });
+  m.clear();
+  m.add(v(D), { videoId: C, timeSec: 0 });
+  assert.deepEqual(ids(m), [C, D]);
+  assert.equal(currentId(m), C);
+});

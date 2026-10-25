@@ -129,6 +129,13 @@ export class QueueModel {
     else if (idx === this.s.current && this.s.current >= this.s.items.length) this.s.current = null;
   }
 
+  // Empties the queue and everything tied to it (shuffle, playlist, return points). The video
+  // on screen keeps playing; it just isn't part of a queue any more.
+  clear(): void {
+    this.s = emptyState();
+    this.removedPlaying = null;
+  }
+
   jump(uid: string): Command {
     const idx = this.indexOf(uid);
     if (idx < 0) return null;
