@@ -6,9 +6,9 @@
 const { spawn } = require('child_process');
 
 // castLabs' upload (the whole 235 MB app) takes 25 s on a good day and nearly 2 minutes on a
-// slow one, and now and then it
-// stalls forever with no error. A fresh attempt usually goes straight through, so each
-// attempt gets a time limit and signing is retried a few times before the build gives up.
+// slow one, and now and then it stalls forever with no error. A fresh attempt usually goes
+// through, so each attempt gets a time limit and signing is retried a few times before the
+// build gives up.
 const SIGN_ATTEMPTS = 4;
 const SIGN_TIMEOUT_MS = 360_000;
 const VERIFY_TIMEOUT_MS = 60_000;
