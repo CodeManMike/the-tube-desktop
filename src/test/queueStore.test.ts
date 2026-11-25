@@ -45,13 +45,12 @@ test('drops items with invalid ids and clamps current', () => {
   assert.equal(s.current, null);
 });
 
-test('caps the return stack at 10', () => {
+test('limits old detours while keeping the original and latest timestamps', () => {
   const file = tmp();
   const stack = Array.from({ length: 14 }, (_, i) => ({ kind: 'video', videoId: 'ccccccccccc', timeSec: i }));
   fs.writeFileSync(file, JSON.stringify({ ...STATE, returnStack: stack }));
   const s = new QueueStore(file).load();
-  assert.equal(s.returnStack.length, 10);
-  assert.equal((s.returnStack[9] as { timeSec: number }).timeSec, 13);
+  assert.deepEqual(s.returnStack, [stack[0], stack[13]]);
 });
 
 test('writeFileAtomic logs a failed write instead of throwing', () => {

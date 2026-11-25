@@ -17,13 +17,13 @@ function fakeWc(url: string) {
   return { sent, url, send: (channel: string, payload: any) => sent.push({ channel, payload }), isDestroyed: () => false, getURL() { return this.url; } };
 }
 
-function setup() {
+function setup(fetchJson: (url: string) => Promise<any> = async () => ({})) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ttd-service-'));
   let n = 0;
   const model = new QueueModel(undefined, () => `u${++n}`);
   model.add(item(A)); model.add(item(B));
   model.jump(model.state().items[0].uid);
-  const service = new QueueService(model, new QueueStore(path.join(dir, 'queue.json')), new HistoryStore(path.join(dir, 'history.json')), async () => ({}));
+  const service = new QueueService(model, new QueueStore(path.join(dir, 'queue.json')), new HistoryStore(path.join(dir, 'history.json')), fetchJson);
   const main = fakeWc(`https://www.youtube.com/watch?v=${A}`);
   (service as any).wc = main; // attach() also registers IPC; tests only need the target
   const pipWc = fakeWc(`https://www.youtube.com/watch?v=${A}`);
@@ -38,7 +38,8 @@ test('while PiP is the player, commands go to PiP and state still goes to main',
   service.handlePip({ type: 'ended', videoId: A });
   assert.deepEqual(pipCommands, [{ navigate: { videoId: B, timeSec: 0 } }]);
   assert.equal(lastState(main).command, null);
-  assert.equal(lastState(main).state.current, 1);
+  assert.equal(lastState(main).state.items[0].videoId, B);
+  assert.equal(lastState(main).state.current, 0);
 });
 
 test('PiP events outside its allowed set are dropped', () => {
@@ -87,6 +88,53 @@ test("step('next') with PiP as the player sends the command to PiP", () => {
 test('step does nothing without a watched video', () => {
   const { service, main } = setup();
   main.url = 'https://www.youtube.com/';
+  const before = main.sent.length;
+  service.step('next');
+  assert.equal(main.sent.length, before);
+});
+
+test('add actions from Home and watch append immediately in selection order', () => {
+  const { model, service, main } = setup();
+  service.handle({ type: 'action', action: 'clear' });
+  main.url = 'https://www.youtube.com/';
+  service.handle({ type: 'add', item: item(B) });
+  main.url = 'https://www.youtube.com/watch?v=' + A;
+  service.handle({ type: 'add', item: item(C) });
+  assert.deepEqual(model.state().items.map((entry) => entry.videoId), [B, C]);
+  assert.equal(model.state().current, null);
+  assert.equal(lastState(main).state.items.length, 2);
+  service.handle({ type: 'action', action: 'start' });
+  assert.equal(lastState(main).command.navigate.videoId, B);
+});
+
+test('a late native add metadata response cannot recreate an item after Clear', async () => {
+  const { model, service } = setup(async () => ({ title: 'Late title' }));
+  service.handle({ type: 'action', action: 'clear' });
+  const adding = service.addById(B);
+  assert.deepEqual(model.state().items.map((entry) => entry.videoId), [B]);
+  service.handle({ type: 'action', action: 'clear' });
+  await adding;
+  assert.deepEqual(model.state().items, []);
+});
+
+test('adding the current mini-player video on Home adopts the existing playback', () => {
+  const { model, service, main } = setup();
+  service.handle({ type: 'action', action: 'clear' });
+  main.url = 'https://www.youtube.com/';
+  service.handle({ type: 'progress', videoId: A, timeSec: 42, durationSec: 100 });
+  service.handle({ type: 'add', item: item(A), fromPlayer: true });
+  assert.equal(model.state().current, 0);
+  assert.equal(lastState(main).command, null);
+  assert.deepEqual(model.state().items.map((entry) => entry.videoId), [A]);
+});
+
+test('desktop Next follows the mini-player while Home is open', () => {
+  const { service, main } = setup();
+  main.url = 'https://www.youtube.com/';
+  service.handle({ type: 'activePlayer', videoId: A });
+  service.step('next');
+  assert.equal(lastState(main).command.navigate.videoId, B);
+  service.handle({ type: 'activePlayer', videoId: null });
   const before = main.sent.length;
   service.step('next');
   assert.equal(main.sent.length, before);

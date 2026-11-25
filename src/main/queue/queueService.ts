@@ -1,3 +1,4 @@
+import { performance } from 'perf_hooks';
 import { ipcMain, IpcMainEvent, WebContents } from 'electron';
 import { HistoryStore } from '../history/historyStore';
 import { FetchBridge } from './fetchBridge';
@@ -13,7 +14,7 @@ const FULL_PLAYLIST_MAX = 500;
 const FULL_PLAYLIST_MAX_PAGES = 10;
 
 // Whatever is playing the queue when it isn't the main window (the PiP window).
-export type Player = { webContents: WebContents; navigate(cmd: NonNullable<Command>): void };
+export type Player = { webContents: WebContents; navigate(cmd: NonNullable<Command>): void; updateQueueNext?(videoId: string | null): void };
 
 export type QueuePayload = { state: ReturnType<QueueModel['state']>; nextVideoId: string | null; command: Command; seq: number };
 
@@ -24,7 +25,8 @@ export class QueueService {
   private seq = 0;
   private playing: Playing | null = null;
   private lastFrom: Playing | null = null;
-  private autoplay: NewItem | null = null;
+  private mainVideoId: string | null = null;
+  private sample: { uid: string; at: number; timeSec: number; rate: number; playing: boolean } | null = null;
   private readonly bridge: FetchBridge;
   private readonly runner: ShuffleRunner;
   private player: Player | null = null;
@@ -60,6 +62,8 @@ export class QueueService {
     });
     ipcMain.on('queue:ready', (event) => {
       if (!this.fromYouTube(event)) return;
+      this.mainVideoId = null;
+      if (!this.player) this.sample = null;
       this.publish(null);
       this.refill(); // after a restart, top up only if needed
     });
@@ -74,8 +78,10 @@ export class QueueService {
   // While a player is set, it plays the queue: commands go there, and main-window
   // playback means you've taken over in the main window again (onTakeover).
   setPlayer(player: Player | null, onTakeover?: () => void): void {
+    if (player !== this.player) this.sample = null;
     this.player = player;
     this.onTakeover = player ? onTakeover ?? null : null;
+    player?.updateQueueNext?.(this.model.nextVideoId());
   }
 
   // Events from the PiP window: only playback reports and next/previous.
@@ -85,7 +91,7 @@ export class QueueService {
       console.warn('[queue] ignored an invalid event from PiP');
       return;
     }
-    this.apply(ev);
+    if (this.player) this.apply(ev);
   }
 
   // The title of what's playing (tray tooltip), from the last progress report.
@@ -114,8 +120,9 @@ export class QueueService {
   private watching(): Playing | undefined {
     try {
       const u = new URL((this.player?.webContents ?? this.wc)?.getURL() ?? '');
-      const id = u.searchParams.get('v');
-      if (u.hostname !== 'www.youtube.com' || u.pathname !== '/watch' || !id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return undefined;
+      if (u.hostname !== 'www.youtube.com') return undefined;
+      const id = u.pathname === '/watch' ? u.searchParams.get('v') : !this.player ? this.mainVideoId : null;
+      if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return undefined;
       return this.playing?.videoId === id ? this.playing : { videoId: id, timeSec: 0 };
     } catch {
       return undefined;
@@ -137,15 +144,14 @@ export class QueueService {
 
   // "Add to queue" arrives as a bare video id.
   async addById(videoId: string): Promise<void> {
-    this.model.add(await this.lookup(videoId), this.watching());
+    const playing = this.watching();
+    const current = playing?.videoId === videoId ? playing : undefined;
+    const fallback = sanitiseItem({ videoId, title: current?.title, channel: current?.channel });
+    if (!fallback) return;
+    const uid = this.model.add(fallback, current);
     this.commit(null);
-  }
-
-  // YouTube's autoplay pick sometimes arrives without a title; fill it in before it can
-  // be appended to the queue.
-  private async fillAutoplayTitle(videoId: string): Promise<void> {
     const item = await this.lookup(videoId);
-    if (this.autoplay?.videoId === videoId) this.autoplay = item;
+    if (item.title !== videoId && this.model.updateItem(uid, item)) this.commit(null);
   }
 
   // Top the queue up from the shuffle source when it runs low (a no-op otherwise).
@@ -199,17 +205,43 @@ export class QueueService {
   // Events from the main window.
   handle(ev: PageEvent): void {
     // One player at a time: playing in the main window closes PiP.
-    if (this.player && (ev.type === 'navigated' || ev.type === 'progress')) {
+    if (this.player && (ev.type === 'navigated' || (ev.type === 'progress' && ev.playing !== false))) {
       const takeover = this.onTakeover;
       this.setPlayer(null);
       takeover?.();
     }
+    if (this.player && (ev.type === 'ended' || ev.type === 'progress')) return;
     this.apply(ev);
+  }
+
+  private recordPlayback(ev: Extract<PageEvent, { type: 'progress' }>): void {
+    const uid = this.model.currentEntry(ev.videoId);
+    if (!uid) {
+      this.sample = null;
+      return;
+    }
+    const previous = this.sample;
+    const at = performance.now();
+    const rate = ev.rate ?? 1;
+    this.sample = { uid, at, timeSec: ev.timeSec, rate, playing: ev.playing !== false };
+    if (ev.seek || previous?.uid !== uid || !previous.playing || previous.rate !== rate) return;
+    const elapsed = (at - previous.at) / 1000;
+    const playback = (ev.timeSec - previous.timeSec) / rate;
+    // Seeks and long gaps break the sample pair. Credit at most elapsed wall time.
+    if (elapsed <= 8 && playback > 0 && playback <= elapsed + 0.6) {
+      this.model.creditPlayback(uid, Math.min(elapsed, playback));
+    }
   }
 
   private apply(ev: PageEvent): void {
     let command: Command = null;
     switch (ev.type) {
+      case 'add': {
+        // YouTube's mini-player can still report playback when the page URL is Home.
+        const playing = this.watching() ?? (ev.fromPlayer ? this.playing : null);
+        this.model.add(ev.item, playing?.videoId === ev.item.videoId ? playing : undefined);
+        break;
+      }
       case 'fetched':
         this.bridge.resolve(ev);
         return;
@@ -218,26 +250,28 @@ export class QueueService {
         this.commit(null);
         this.refill(true); // an explicit pick adds a batch right away
         return;
+      case 'activePlayer':
+        this.mainVideoId = ev.videoId;
+        if (!ev.videoId && !this.player) this.sample = null;
+        return;
       case 'navigated':
         this.lastFrom = ev.from;
-        this.autoplay = null;
+        this.sample = null;
         this.model.navigated(ev.videoId, ev.from);
         break;
       case 'ended':
-        command = this.model.ended(ev.videoId, this.autoplay);
+        this.sample = null;
+        command = this.model.ended(ev.videoId);
         break;
       case 'progress':
+        this.recordPlayback(ev);
         this.playing = { videoId: ev.videoId, timeSec: ev.timeSec, title: ev.title, channel: ev.channel };
         this.history.record({ videoId: ev.videoId, title: ev.title, channel: ev.channel, durationSec: ev.durationSec, timeSec: ev.timeSec });
         return; // no queue change
       case 'watchData':
-        if (ev.autoplay) {
-          this.autoplay = ev.autoplay;
-          if (ev.autoplay.title === ev.autoplay.videoId) this.fillAutoplayTitle(ev.autoplay.videoId);
-        }
         if (ev.playlist && ev.listParam === ev.playlist.playlistId) {
           const before = this.model.state().sourceListId;
-          this.model.replaceWithPlaylist(ev.listParam, ev.playlist.items, ev.videoId, this.lastFrom?.timeSec ?? 0);
+          this.model.replaceWithPlaylist(ev.listParam, ev.playlist.items, ev.videoId, this.lastFrom);
           const meta = ev.playlistMeta;
           const replaced = before !== ev.listParam && this.model.state().sourceListId === ev.listParam;
           const wantsRest = replaced && shouldFetchRestOfPlaylist(meta, ev.playlist.items.length);
@@ -248,17 +282,14 @@ export class QueueService {
       case 'action': {
         const { action, uid } = ev;
         if (action === 'back') command = this.model.back();
+        else if (action === 'start') command = this.model.startPending();
+        else if (action === 'shufflePending') this.model.shufflePending();
         else if (action === 'clear') this.model.clear();
         else if (ev.videoId && action === 'next') command = this.model.next(ev.videoId);
         else if (ev.videoId && action === 'previous') command = this.model.previous(ev.videoId);
         else if (uid && action === 'jump') command = this.model.jump(uid);
         else if (uid && action === 'remove') this.model.remove(uid);
-        else if (uid && action === 'playNext') {
-          const s = this.model.state();
-          const from = s.items.findIndex((i) => i.uid === uid);
-          const current = s.current ?? -1;
-          this.model.move(uid, from > current ? current + 1 : current);
-        }
+        else if (uid && action === 'playNext') this.model.moveToPlayNext(uid);
         break;
       }
       case 'move':
@@ -281,8 +312,10 @@ export class QueueService {
       this.player.navigate(command);
       command = null;
     }
+    const nextVideoId = this.model.nextVideoId();
+    this.player?.updateQueueNext?.(nextVideoId);
     if (!this.wc || this.wc.isDestroyed()) return;
-    const payload: QueuePayload = { state: this.model.state(), nextVideoId: this.model.nextVideoId(), command, seq: ++this.seq };
+    const payload: QueuePayload = { state: this.model.state(), nextVideoId, command, seq: ++this.seq };
     this.wc.send('queue:state', payload);
   }
 

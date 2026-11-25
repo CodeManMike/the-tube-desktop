@@ -2,7 +2,7 @@ import { Plugin } from '../../shared/plugin';
 import { QUEUE_CSS } from './panelCss';
 import { queuePageScript } from './pageScript';
 import { parseVideoPage } from './parse';
-import { capturePlaylistAndAutoplay, interceptAddToQueue, pointAutoplayAtQueue } from './transforms';
+import { capturePlaylistAndAutoplay, interceptAddToQueue } from './transforms';
 
 export const queue: Plugin = {
   manifest: {
@@ -14,12 +14,11 @@ export const queue: Plugin = {
       { key: 'watchedPercent', label: 'Counts as watched at (%)', hint: 'Used by shuffle and Hide watched.', type: 'number', default: 80, min: 50, max: 100 },
     ],
   },
-  // Capture runs before the autoplay redirect so it records YouTube's real pick.
   transforms: {
     browse: interceptAddToQueue,
     search: interceptAddToQueue,
-    next: [interceptAddToQueue, capturePlaylistAndAutoplay, pointAutoplayAtQueue],
-    initialData: [interceptAddToQueue, capturePlaylistAndAutoplay, pointAutoplayAtQueue],
+    next: [interceptAddToQueue, capturePlaylistAndAutoplay],
+    initialData: [interceptAddToQueue, capturePlaylistAndAutoplay],
   },
   css: QUEUE_CSS,
   pageScript: queuePageScript,

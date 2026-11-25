@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 
-export type QueueItem = { uid: string; videoId: string; title: string; channel: string; thumbnail: string; durationSec?: number };
-export type NewItem = Omit<QueueItem, 'uid'>;
+export type QueueItem = { uid: string; videoId: string; title: string; channel: string; thumbnail: string; durationSec?: number; played?: true; watchedSec?: number; source?: 'shuffle' | 'autoplay' };
+export type NewItem = Omit<QueueItem, 'uid' | 'played' | 'watchedSec' | 'source'>;
 
 // Where shuffle refills come from: one or more creators' uploads, or a topic search.
 export type ShuffleSource =
@@ -17,6 +17,7 @@ export type ReturnPoint =
       sourceListId: string | null;
       shuffle: ShuffleSource | null;
       resumeTimeSec: number;
+      resumeVideoId?: string;
     };
 
 export type QueueState = {
@@ -38,6 +39,8 @@ export type Command = { navigate: { videoId: string; timeSec: number } } | null;
 export type Playing = { videoId: string; timeSec: number; title?: string; channel?: string };
 
 export const MAX_RETURN_POINTS = 10;
+export const MAX_DETOUR_DEPTH = 2;
+export const QUEUE_WATCHED_SECONDS = 300;
 
 const emptyState = (): QueueState => ({
   items: [],
@@ -79,7 +82,6 @@ export class QueueModel {
 
   private pushReturn(point: ReturnPoint): void {
     this.s.returnStack.push(point);
-    while (this.s.returnStack.length > MAX_RETURN_POINTS) this.s.returnStack.shift();
   }
 
   // Starting a queue while watching something: that video becomes item 0, the current one.
@@ -98,13 +100,30 @@ export class QueueModel {
     if (this.s.detourVideoId === playing.videoId) this.s.detourVideoId = null;
   }
 
-  add(item: NewItem, playing?: Playing): void {
-    if (playing) this.adoptPlaying(playing);
-    this.s.items.push(this.withUid(item));
+  add(item: NewItem, playing?: Playing): string {
+    const isPlayingItem = this.s.items.length === 0 && playing?.videoId === item.videoId;
+    if (playing && !isPlayingItem) this.adoptPlaying(playing);
+    const entry = this.withUid(item);
+    this.s.items.push(entry);
+    if (isPlayingItem) {
+      this.s.current = 0;
+      this.leaveDetour();
+    }
+    return entry.uid;
+  }
+
+  updateItem(uid: string, item: NewItem): boolean {
+    const existing = this.s.items[this.indexOf(uid)];
+    if (!existing || existing.videoId !== item.videoId) return false;
+    Object.assign(existing, item);
+    return true;
   }
 
   playNext(item: NewItem, playing?: Playing): void {
-    if (this.s.items.length === 0) return this.add(item, playing);
+    if (this.s.items.length === 0) {
+      this.add(item, playing);
+      return;
+    }
     const at = this.s.current === null ? 0 : this.s.current + 1;
     this.s.items.splice(at, 0, this.withUid(item));
     if (this.s.current !== null && at <= this.s.current) this.s.current++;
@@ -136,10 +155,55 @@ export class QueueModel {
     this.removedPlaying = null;
   }
 
+  private pendingIndex(): number {
+    return this.s.items.findIndex((item, index) => index !== this.s.current && !item.played);
+  }
+
+  currentEntry(videoId: string): string | undefined {
+    const current = this.s.current === null ? undefined : this.s.items[this.s.current];
+    return current?.videoId === videoId ? current.uid : undefined;
+  }
+
+  creditPlayback(uid: string, seconds: number): void {
+    const item = this.s.items[this.indexOf(uid)];
+    if (item) item.watchedSec = Math.min(QUEUE_WATCHED_SECONDS, (item.watchedSec ?? 0) + seconds);
+  }
+
+  private select(index: number, rotateUnwatched = false): void {
+    const selected = this.s.items[index];
+    if (this.s.current !== null && this.s.current !== index) {
+      const previous = this.s.items[this.s.current];
+      if ((previous.watchedSec ?? 0) >= QUEUE_WATCHED_SECONDS) this.s.items.splice(this.s.current, 1);
+      else if (rotateUnwatched) {
+        this.s.items.splice(this.s.current, 1);
+        this.s.items.push(previous);
+      }
+    }
+    this.s.current = this.indexOf(selected.uid);
+    delete selected.played;
+  }
+
+  moveToPlayNext(uid: string): void {
+    const from = this.indexOf(uid);
+    if (from < 0 || from === this.s.current) return;
+    const to = this.s.items.findIndex((item, index) => index !== this.s.current && index !== from && !item.played);
+    delete this.s.items[from].played;
+    if (to >= 0) this.move(uid, from < to ? to - 1 : to);
+  }
+
+  shufflePending(): void {
+    const indices = this.s.items.flatMap((item, index) => index !== this.s.current && !item.played ? [index] : []);
+    for (let i = indices.length - 1; i > 0; i--) {
+      const a = indices[i];
+      const b = indices[Math.floor(Math.random() * (i + 1))];
+      [this.s.items[a], this.s.items[b]] = [this.s.items[b], this.s.items[a]];
+    }
+  }
+
   jump(uid: string): Command {
     const idx = this.indexOf(uid);
     if (idx < 0) return null;
-    this.s.current = idx;
+    this.select(idx);
     this.leaveDetour();
     return navigate(this.s.items[idx].videoId);
   }
@@ -154,57 +218,62 @@ export class QueueModel {
     this.removedPlaying = null;
     const currentId = this.currentVideoId();
     if (videoId === currentId) {
-      this.s.detourVideoId = null;
+      if (this.s.detourVideoId) this.leaveDetour();
       return;
     }
     if (videoId === this.s.detourVideoId) return;
+    if (this.s.detourVideoId) {
+      const stop = this.s.returnStack.findIndex((point) => point.kind === 'video' && point.videoId === videoId);
+      if (stop >= 0) {
+        this.s.returnStack.length = stop;
+        this.s.detourVideoId = videoId;
+        return;
+      }
+    }
 
     // Picking another queued video is a jump within the queue, not a detour.
     const start = this.s.current ?? -1;
     const after = this.s.items.findIndex((i, n) => n > start && i.videoId === videoId);
     const idx = after >= 0 ? after : this.s.items.findIndex((i) => i.videoId === videoId);
     if (idx >= 0) {
-      this.s.current = idx;
+      this.select(idx);
       this.leaveDetour();
       return;
     }
 
     // Leaving the queue's video (or a detour) for something else starts a (nested) detour.
     if (from && (from.videoId === currentId || from.videoId === this.s.detourVideoId)) {
+      const depth = this.s.returnStack.filter((point) => point.kind === 'video').length;
+      if (depth >= MAX_DETOUR_DEPTH) return;
       this.pushReturn({ kind: 'video', videoId: from.videoId, timeSec: from.timeSec });
       this.s.detourVideoId = videoId;
     }
   }
 
-  ended(videoId: string, autoplayCandidate: NewItem | null): Command {
+  ended(videoId: string): Command {
     if (videoId === this.s.detourVideoId) return this.back();
     if (videoId === this.removedPlaying) {
       this.removedPlaying = null;
       const id = this.currentVideoId();
-      return id ? navigate(id) : null;
+      return id ? navigate(id) : this.startPending();
     }
-    if (videoId !== this.currentVideoId() || this.s.current === null) return null;
-    if (this.s.current < this.s.items.length - 1) {
-      this.s.current++;
-      return navigate(this.s.items[this.s.current].videoId);
-    }
-    // A candidate equal to the video that just ended would replay it forever.
-    if (!autoplayCandidate || autoplayCandidate.videoId === videoId) return null;
-    // The queue ran out: YouTube's pick joins the queue visibly, then plays.
-    this.s.items.push(this.withUid(autoplayCandidate));
-    this.s.current = this.s.items.length - 1;
-    return navigate(autoplayCandidate.videoId);
+    if (this.s.current === null) return this.startPending();
+    if (videoId !== this.currentVideoId()) return null;
+    this.s.items.splice(this.s.current, 1);
+    this.s.current = null;
+    return this.startPending();
   }
 
-  replaceWithPlaylist(listId: string, items: NewItem[], startVideoId: string, resumeTimeSec: number): void {
+  replaceWithPlaylist(listId: string, items: NewItem[], startVideoId: string, from: Playing | null): void {
     if (listId === this.s.sourceListId) return;
-    // Opening the playlist looked like a detour from the queue until its data arrived:
-    // that return point becomes the saved queue's playhead instead of a second entry.
-    const top = this.s.returnStack[this.s.returnStack.length - 1];
-    if (this.s.detourVideoId === startVideoId && top?.kind === 'video') {
-      this.s.returnStack.pop();
-      resumeTimeSec = top.timeSec;
-    }
+    const id = this.currentVideoId();
+    const origin = this.s.returnStack.find((point) => point.kind === 'video' && point.videoId === id);
+    // A Mix opened during a rabbit hole returns to the original queue's video.
+    // The resume time is only usable when its source video matches that video.
+    const resumeTimeSec = origin?.kind === 'video' ? origin.timeSec : id && from?.videoId === id ? from.timeSec : 0;
+    const savedQueues = this.s.returnStack.filter((point) => point.kind === 'queue');
+    if (savedQueues.length >= MAX_RETURN_POINTS) return;
+    this.s.returnStack = savedQueues;
     if (this.s.items.length > 0) {
       this.pushReturn({
         kind: 'queue',
@@ -213,13 +282,14 @@ export class QueueModel {
         sourceListId: this.s.sourceListId,
         shuffle: this.s.shuffle,
         resumeTimeSec,
+        ...(id && { resumeVideoId: id }),
       });
     }
     // A playlist replaces the queue, and with it any shuffle source.
     this.s.shuffle = null;
     this.s.shuffleExhausted = false;
-    this.s.items = items.map((i) => this.withUid(i));
-    const start = this.s.items.findIndex((i) => i.videoId === startVideoId);
+    const start = items.findIndex((i) => i.videoId === startVideoId);
+    this.s.items = items.map((item, index) => ({ ...this.withUid(item), ...(index < start && { played: true as const }) }));
     this.s.current = this.s.items.length === 0 ? null : Math.max(0, start);
     this.s.sourceListId = listId;
     this.s.detourVideoId = null;
@@ -236,7 +306,7 @@ export class QueueModel {
       this.s.shuffleExhausted = false;
       this.s.detourVideoId = null;
       const id = this.currentVideoId();
-      return id ? navigate(id, point.resumeTimeSec) : null;
+      return id ? navigate(id, point.resumeVideoId === id ? point.resumeTimeSec : 0) : null;
     }
     // Returning to a detour's origin: still a detour unless it is the queue's own video.
     const stillDetour = point.videoId !== this.currentVideoId() && this.s.returnStack.length > 0;
@@ -249,17 +319,20 @@ export class QueueModel {
     return JSON.stringify([this.s.sourceListId, this.s.current, this.s.items.map((i) => i.uid)]);
   }
 
-  // Next (PiP or panel): exactly what the video ending would do, so detours return.
+  startPending(): Command {
+    const first = this.pendingIndex();
+    return first < 0 ? null : this.jump(this.s.items[first].uid);
+  }
+
+  // A manual skip keeps an unfinished entry, behind the remaining pending items.
   next(videoId: string): Command {
-    // Watching something outside the queue (browsing, not a detour): go to the queue item
-    // after the current one, as YouTube's own Next button does in TTD.
-    if (videoId !== this.s.detourVideoId && videoId !== this.currentVideoId() && this.s.current !== null) {
-      if (this.s.current + 1 >= this.s.items.length) return null;
-      this.s.current++;
-      this.leaveDetour();
-      return navigate(this.s.items[this.s.current].videoId);
-    }
-    return this.ended(videoId, null);
+    if (videoId === this.s.detourVideoId) return this.back();
+    if (videoId === this.removedPlaying) return this.ended(videoId);
+    const next = this.pendingIndex();
+    if (next < 0) return null;
+    this.select(next, videoId === this.currentVideoId());
+    this.leaveDetour();
+    return navigate(this.currentVideoId()!);
   }
 
   // Previous: back from a detour to where it started, otherwise the previous queue item;
@@ -270,9 +343,7 @@ export class QueueModel {
     // Outside the queue: back to where the queue is.
     if (videoId !== this.currentVideoId()) return navigate(this.s.items[this.s.current].videoId);
     if (this.s.current === 0) return navigate(videoId, 0);
-    this.s.current--;
-    this.leaveDetour();
-    return navigate(this.s.items[this.s.current].videoId);
+    return this.jump(this.s.items[this.s.current - 1].uid);
   }
 
   // The full playlist arrived (YouTube only sends a window of ~25 items at first). Applies
@@ -291,7 +362,10 @@ export class QueueModel {
       if (at < 0) at = items.findIndex((i) => i.videoId === currentId);
       if (at < 0) return false;
     }
-    this.s.items = items.map((i) => this.withUid(i));
+    const current = this.s.current === null ? null : this.s.items[this.s.current];
+    this.s.items = items.map((item, index) => index === at && current
+      ? { ...current, ...item }
+      : { ...this.withUid(item), ...(index < at && { played: true as const }) });
     this.s.current = currentId === null ? null : at;
     return true;
   }
@@ -306,11 +380,11 @@ export class QueueModel {
   }
 
   remainingAfterCurrent(): number {
-    return this.s.current === null ? this.s.items.length : this.s.items.length - this.s.current - 1;
+    return this.s.items.filter((item, index) => index !== this.s.current && !item.played).length;
   }
 
   appendItems(items: NewItem[]): void {
-    for (const item of items) this.s.items.push(this.withUid(item));
+    for (const item of items) this.s.items.push({ ...this.withUid(item), source: 'shuffle' });
   }
 
   nextVideoId(): string | null {
@@ -320,7 +394,8 @@ export class QueueModel {
       const item = top.current === null ? undefined : top.items[top.current];
       return item?.videoId ?? null;
     }
-    if (this.s.current !== null && this.s.current + 1 < this.s.items.length) return this.s.items[this.s.current + 1].videoId;
-    return null;
+    if (this.removedPlaying && this.s.current !== null) return this.s.items[this.s.current].videoId;
+    const next = this.pendingIndex();
+    return this.s.items[next]?.videoId ?? null;
   }
 }

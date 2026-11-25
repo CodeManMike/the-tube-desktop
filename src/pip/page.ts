@@ -122,16 +122,34 @@ export function pipPageScript(): void {
   drag(strip, 'move');
   drag(grip, 'resize');
 
-  const progress = () => {
+  const progress = (playing = true, seek = false) => {
     const p = player();
+    if (p?.matches('.ad-showing, .ad-interrupting')) return;
     const vd = p?.getVideoData?.() ?? {};
     if (typeof vd.video_id === 'string' && vd.video_id) {
-      bridge.report({ type: 'progress', videoId: vd.video_id, timeSec: p.getCurrentTime(), title: vd.title, channel: vd.author, durationSec: p.getDuration() || 0 });
+      bridge.report({ type: 'progress', videoId: vd.video_id, timeSec: p.getCurrentTime(), title: vd.title, channel: vd.author, durationSec: p.getDuration() || 0, playing, rate: p.getPlaybackRate?.() ?? 1, ...(seek && { seek: true }) });
     }
   };
 
+  window.addEventListener('seeking', (event) => {
+    if (event.target instanceof HTMLVideoElement && event.target.closest('#movie_player')) progress(false, true);
+  }, true);
+
   // The player appears after the page script runs; hook it once it's there.
   let hooked = false;
+  let queueNext: string | null = null;
+  let reportedEnd: string | null = null;
+  const end = (id: string | null) => {
+    if (!id || reportedEnd === id) return;
+    reportedEnd = id;
+    bridge.report({ type: 'ended', videoId: id });
+  };
+  window.addEventListener('ended', (event) => {
+    if (!(event.target instanceof HTMLVideoElement) || !event.target.closest('#movie_player')) return;
+    if (player()?.matches('.ad-showing, .ad-interrupting')) return;
+    if (queueNext) event.stopImmediatePropagation();
+    end(videoId());
+  }, true);
   let pendingAudio: { muted: boolean; volume: number } | null = null;
   const applyAudio = () => {
     const p = player();
@@ -160,8 +178,9 @@ export function pipPageScript(): void {
     p.addEventListener('onStateChange', (st: number) => {
       setIcon(playPause, st === 1 ? 'pause' : 'play');
       const id = videoId();
-      if (st === 0 && id) bridge.report({ type: 'ended', videoId: id });
-      if (st === 1) progress();
+      if (st === 0 && !p.matches('.ad-showing, .ad-interrupting')) end(id);
+      if (st === 1) reportedEnd = null;
+      if (st === 1 || st === 2 || st === 3) progress(st === 1);
     });
     document.querySelector('#movie_player video')?.addEventListener('loadedmetadata', sendAspect);
     sendAspect();
@@ -182,6 +201,7 @@ export function pipPageScript(): void {
 
   // Commands from the queue: the same seek-or-navigate as the main window's queue script.
   bridge.onCommand((cmd: any) => {
+    if (cmd?.queueNext === null || typeof cmd?.queueNext === 'string') queueNext = cmd.queueNext;
     if (cmd && typeof cmd.onTop === 'boolean') pin.classList.toggle('on', cmd.onTop);
     // The main window's mute and volume, applied once this player exists.
     if (cmd?.audio && typeof cmd.audio.muted === 'boolean' && Number.isFinite(cmd.audio.volume)) {

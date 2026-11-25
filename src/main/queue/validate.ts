@@ -5,9 +5,11 @@ import { Candidate } from './shuffle';
 // here before it can reach the queue or the files on disk.
 
 export type PageEvent =
+  | { type: 'add'; item: NewItem; fromPlayer?: true }
   | { type: 'navigated'; videoId: string; from: Playing | null }
   | { type: 'ended'; videoId: string }
-  | { type: 'progress'; videoId: string; timeSec: number; durationSec: number; title?: string; channel?: string }
+  | { type: 'activePlayer'; videoId: string | null }
+  | { type: 'progress'; videoId: string; timeSec: number; durationSec: number; title?: string; channel?: string; playing?: boolean; rate?: number; seek?: true }
   | {
       type: 'watchData';
       videoId: string;
@@ -19,12 +21,12 @@ export type PageEvent =
     }
   | { type: 'fetched'; requestId: string; ok: boolean; items: Candidate[]; continuation: string | null }
   | { type: 'shuffle'; action: 'creator' | 'addCreator' | 'topic' | 'stop'; channelId?: string; name?: string; query?: string }
-  | { type: 'action'; action: 'jump' | 'remove' | 'playNext' | 'back' | 'clear' | 'next' | 'previous'; uid?: string; videoId?: string }
+  | { type: 'action'; action: 'jump' | 'remove' | 'playNext' | 'back' | 'clear' | 'shufflePending' | 'start' | 'next' | 'previous'; uid?: string; videoId?: string }
   | { type: 'move'; uid: string; toIndex: number };
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 const MAX_PLAYLIST = 500;
-const ACTIONS = ['jump', 'remove', 'playNext', 'back', 'clear'] as const;
+const ACTIONS = ['jump', 'remove', 'playNext', 'back', 'clear', 'shufflePending', 'start'] as const;
 // Steps relative to the playing video: they name it instead of a queue item.
 const STEP_ACTIONS = ['next', 'previous'] as const;
 const PIP_EVENT_TYPES = ['navigated', 'progress', 'ended', 'action'];
@@ -93,10 +95,16 @@ function playing(v: unknown): Playing | null | undefined {
 export function validateEvent(raw: unknown): PageEvent | null {
   if (!isObject(raw)) return null;
   switch (raw.type) {
+    case 'add': {
+      const item = sanitiseItem(raw.item);
+      return item ? { type: 'add', item, ...(raw.fromPlayer === true && { fromPlayer: true }) } : null;
+    }
     case 'navigated': {
       const from = playing(raw.from);
       return isVideoId(raw.videoId) && from !== undefined ? { type: 'navigated', videoId: raw.videoId, from } : null;
     }
+    case 'activePlayer':
+      return raw.videoId === null || isVideoId(raw.videoId) ? { type: 'activePlayer', videoId: raw.videoId } : null;
     case 'ended':
       return isVideoId(raw.videoId) ? { type: 'ended', videoId: raw.videoId } : null;
     case 'progress': {
@@ -108,6 +116,9 @@ export function validateEvent(raw: unknown): PageEvent | null {
         videoId: raw.videoId,
         timeSec: raw.timeSec,
         durationSec: raw.durationSec,
+        ...(typeof raw.playing === 'boolean' && { playing: raw.playing }),
+        ...(raw.seek === true && { seek: true }),
+        ...(typeof raw.rate === 'number' && raw.rate >= 0.25 && raw.rate <= 4 && { rate: raw.rate }),
         ...(title !== undefined && { title }),
         ...(channel !== undefined && { channel }),
       };

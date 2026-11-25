@@ -1,6 +1,5 @@
 // Queue transforms. Each runs inside YouTube's page, serialised with toString(), so each
-// must be self-contained: helpers live inside the function. Live queue state is read
-// only from globalThis.__ttdQueue (set by the queue page script).
+// must be self-contained: helpers live inside the function.
 
 // YouTube's "Add to queue" (hover button and ⋮ menu) becomes a URL the main process
 // intercepts in will-navigate, so the video lands in TTD's queue instead of YouTube's.
@@ -22,21 +21,6 @@ export function interceptAddToQueue(data: any, _settings: Record<string, unknown
     }
   };
   walk(data);
-  return data;
-}
-
-// Point YouTube's autoplay, next button and end-screen at TTD's next video, so its own
-// controls follow the queue.
-export function pointAutoplayAtQueue(data: any, _settings: Record<string, unknown>): any {
-  const next = (globalThis as any).__ttdQueue?.nextVideoId;
-  if (typeof next !== 'string') return data;
-  // The queue state may still describe the previous video; never point a video at itself.
-  if (next === data?.currentVideoEndpoint?.watchEndpoint?.videoId) return data;
-  const set = data?.contents?.twoColumnWatchNextResults?.autoplay?.autoplay?.sets?.[0];
-  if (set?.autoplayVideo?.watchEndpoint) set.autoplayVideo.watchEndpoint.videoId = next;
-  if (set?.nextButtonVideo?.watchEndpoint) set.nextButtonVideo.watchEndpoint.videoId = next;
-  const overlay = data?.playerOverlays?.playerOverlayRenderer?.autoplay?.playerOverlayAutoplayRenderer;
-  if (overlay) overlay.videoId = next;
   return data;
 }
 

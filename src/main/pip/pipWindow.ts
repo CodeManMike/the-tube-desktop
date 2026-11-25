@@ -35,6 +35,7 @@ export class PipWindow {
   private win: BrowserWindow | null = null;
   private opening = false;
   private handoff = true;
+  private queueNext: string | null = null;
   private ratio = 16 / 9;
   private drag: { mode: 'move' | 'resize'; start: Rect; x: number; y: number } | null = null;
   private last: Playing | null = null;
@@ -55,7 +56,9 @@ export class PipWindow {
       queue.handlePip(raw);
     });
     ipcMain.on('pip:ready', (event) => {
-      if (this.fromPip(event)) this.send({ onTop: this.win!.isAlwaysOnTop(), ...(this.openAudio && { audio: this.openAudio }) });
+      if (this.fromPip(event)) {
+        this.send({ onTop: this.win!.isAlwaysOnTop(), ...(this.openAudio && { audio: this.openAudio }), queueNext: this.queueNext });
+      }
     });
     ipcMain.on('pip:control', (event, msg) => {
       if (this.fromPip(event)) this.control(msg);
@@ -219,7 +222,14 @@ export class PipWindow {
 
       this.devHook(win);
       await attachPageBundle(win.webContents, () => [pipEntry(), ...this.pluginEntries()]);
-      this.queue.setPlayer({ webContents: win.webContents, navigate: (cmd) => this.send(cmd) }, () => this.dismiss());
+      this.queue.setPlayer({
+        webContents: win.webContents,
+        navigate: (cmd) => this.send(cmd),
+        updateQueueNext: (queueNext) => {
+          this.queueNext = queueNext;
+          this.send({ queueNext });
+        },
+      }, () => this.dismiss());
       console.log(`[pip] open ${at.videoId} at ${at.timeSec.toFixed(1)}s`);
       win.loadURL(`https://www.youtube.com/watch?v=${at.videoId}&t=${Math.floor(at.timeSec)}s`).catch(() => {});
     } catch (err) {

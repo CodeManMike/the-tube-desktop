@@ -83,7 +83,7 @@ test('navigating away from the current item is a detour; when it ends, play retu
   m.navigated(E, { videoId: A, timeSec: 123 });
   assert.equal(m.state().detourVideoId, E);
   assert.equal(currentId(m), A);
-  assert.deepEqual(m.ended(E, null), { navigate: { videoId: A, timeSec: 123 } });
+  assert.deepEqual(m.ended(E), { navigate: { videoId: A, timeSec: 123 } });
   assert.deepEqual(m.state().returnStack, []);
   assert.equal(m.state().detourVideoId, null);
 });
@@ -94,51 +94,43 @@ test('a detour within a detour unwinds in LIFO order', () => {
   m.navigated(D, { videoId: A, timeSec: 60 });
   m.navigated(E, { videoId: D, timeSec: 15 });
   assert.equal(m.state().detourVideoId, E);
-  assert.deepEqual(m.ended(E, null), { navigate: { videoId: D, timeSec: 15 } });
+  assert.deepEqual(m.ended(E), { navigate: { videoId: D, timeSec: 15 } });
   m.navigated(D, null);
   assert.equal(m.state().detourVideoId, D);
-  assert.deepEqual(m.ended(D, null), { navigate: { videoId: A, timeSec: 60 } });
+  assert.deepEqual(m.ended(D), { navigate: { videoId: A, timeSec: 60 } });
 });
 
-test('the return stack is capped at 10', () => {
+test('a third detour keeps the original return point and queue until cleared explicitly', () => {
   const m = model();
   m.add(v(B), { videoId: A, timeSec: 0 });
-  let from = A;
-  for (let i = 0; i < 12; i++) {
-    const next = `x${String(i).padStart(10, '0')}`;
-    m.navigated(next, { videoId: from, timeSec: i });
-    from = next;
-  }
-  assert.equal(m.state().returnStack.length, 10);
+  m.navigated(C, { videoId: A, timeSec: 32 });
+  m.navigated(D, { videoId: C, timeSec: 18 });
+  m.navigated(E, { videoId: D, timeSec: 6 });
+  assert.equal(m.state().detourVideoId, D);
+  assert.deepEqual(m.back(), { navigate: { videoId: C, timeSec: 18 } });
+  assert.deepEqual(m.back(), { navigate: { videoId: A, timeSec: 32 } });
+  assert.deepEqual(ids(m), [A, B]);
 });
 
 test('ending the current item advances to the next', () => {
   const m = model();
   m.add(v(B), { videoId: A, timeSec: 0 });
-  assert.deepEqual(m.ended(A, null), { navigate: { videoId: B, timeSec: 0 } });
+  assert.deepEqual(m.ended(A), { navigate: { videoId: B, timeSec: 0 } });
   assert.equal(currentId(m), B);
 });
 
-test('ending the last item with an autoplay candidate appends it visibly and plays it', () => {
+test('ending a short final track removes it and leaves native autoplay to YouTube', () => {
   const m = model();
-  m.add(v(B), { videoId: A, timeSec: 0 });
-  m.jump(m.state().items[1].uid);
-  assert.deepEqual(m.ended(B, v(C)), { navigate: { videoId: C, timeSec: 0 } });
-  assert.deepEqual(ids(m), [A, B, C]);
-  assert.equal(currentId(m), C);
-});
-
-test('ending the last item without a candidate returns null', () => {
-  const m = model();
-  m.add(v(B), { videoId: A, timeSec: 0 });
-  m.jump(m.state().items[1].uid);
-  assert.equal(m.ended(B, null), null);
+  m.add(v(A));
+  m.jump(m.state().items[0].uid);
+  assert.equal(m.ended(A), null);
+  assert.deepEqual(ids(m), []);
 });
 
 test('replaceWithPlaylist saves the old queue; back() restores it at its position and time', () => {
   const m = model();
   m.add(v(B), { videoId: A, timeSec: 0 });
-  m.replaceWithPlaylist('PLx', [v(C), v(D)], D, 77);
+  m.replaceWithPlaylist('PLx', [v(C), v(D)], D, { videoId: A, timeSec: 77 });
   assert.deepEqual(ids(m), [C, D]);
   assert.equal(currentId(m), D);
   assert.equal(m.state().sourceListId, 'PLx');
@@ -150,9 +142,9 @@ test('replaceWithPlaylist saves the old queue; back() restores it at its positio
 
 test('replaceWithPlaylist with the same listId again is a no-op', () => {
   const m = model();
-  m.replaceWithPlaylist('PLx', [v(C), v(D)], C, 0);
+  m.replaceWithPlaylist('PLx', [v(C), v(D)], C, null);
   m.add(v(E));
-  m.replaceWithPlaylist('PLx', [v(C), v(D)], C, 0);
+  m.replaceWithPlaylist('PLx', [v(C), v(D)], C, null);
   assert.deepEqual(ids(m), [C, D, E]);
   assert.deepEqual(m.state().returnStack, []);
 });
@@ -176,20 +168,12 @@ test('state() is a deep copy', () => {
   assert.equal(m.state().items[0].title, before);
 });
 
-test('an autoplay candidate equal to the video that just ended is ignored (no replay loop)', () => {
-  const m = model();
-  m.add(v(B), { videoId: A, timeSec: 0 });
-  m.jump(m.state().items[1].uid);
-  assert.equal(m.ended(B, v(B)), null);
-  assert.deepEqual(ids(m), [A, B]);
-});
-
 test('removing the playing item: when it ends, the new current item plays', () => {
   const m = model();
   m.add(v(B), { videoId: A, timeSec: 0 });
   m.add(v(C));
   m.remove(m.state().items[0].uid); // A is still playing on screen
-  assert.deepEqual(m.ended(A, null), { navigate: { videoId: B, timeSec: 0 } });
+  assert.deepEqual(m.ended(A), { navigate: { videoId: B, timeSec: 0 } });
   assert.equal(currentId(m), B);
 });
 
@@ -202,7 +186,7 @@ test('adding while watching a detour makes it current and ends the detour', () =
   m.add(v(C), { videoId: E, timeSec: 5 });
   assert.deepEqual(ids(m), [E, C]);
   assert.equal(m.state().detourVideoId, null);
-  assert.deepEqual(m.ended(E, null), { navigate: { videoId: C, timeSec: 0 } });
+  assert.deepEqual(m.ended(E), { navigate: { videoId: C, timeSec: 0 } });
 });
 
 test('jumping into the queue drops the abandoned detour\'s return points', () => {
@@ -217,7 +201,7 @@ test('starting a playlist from the queue saves the old queue once, at the playhe
   const m = model();
   m.add(v(B), { videoId: A, timeSec: 0 });
   m.navigated(C, { videoId: A, timeSec: 42 }); // looks like a detour until the playlist data arrives
-  m.replaceWithPlaylist('PLx', [v(C), v(D)], C, 7);
+  m.replaceWithPlaylist('PLx', [v(C), v(D)], C, { videoId: A, timeSec: 7 });
   assert.equal(m.state().returnStack.length, 1);
   assert.deepEqual(m.back(), { navigate: { videoId: A, timeSec: 42 } });
 });
@@ -248,7 +232,7 @@ test('a playlist replace clears shuffle; back restores the old queue with its sh
   const m = model();
   m.add(v(B), { videoId: A, timeSec: 0 });
   m.setShuffle(CREATOR);
-  m.replaceWithPlaylist('PLx', [v(C)], C, 0);
+  m.replaceWithPlaylist('PLx', [v(C)], C, null);
   assert.equal(m.state().shuffle, null);
   m.back();
   assert.deepEqual(m.state().shuffle, CREATOR);
@@ -257,7 +241,7 @@ test('a playlist replace clears shuffle; back restores the old queue with its sh
 
 test('extendPlaylist replaces items and keeps current when the list still matches', () => {
   const m = model();
-  m.replaceWithPlaylist('PLx', [v(B), v(C)], C, 0);
+  m.replaceWithPlaylist('PLx', [v(B), v(C)], C, null);
   assert.equal(m.extendPlaylist('PLx', [v(A), v(B), v(C), v(D)]), true);
   assert.deepEqual(ids(m), [A, B, C, D]);
   assert.equal(currentId(m), C);
@@ -265,8 +249,8 @@ test('extendPlaylist replaces items and keeps current when the list still matche
 
 test('extendPlaylist is a no-op after the queue moved on', () => {
   const m = model();
-  m.replaceWithPlaylist('PLx', [v(B), v(C)], B, 0);
-  m.replaceWithPlaylist('PLy', [v(D)], D, 0);
+  m.replaceWithPlaylist('PLx', [v(B), v(C)], B, null);
+  m.replaceWithPlaylist('PLy', [v(D)], D, null);
   assert.equal(m.extendPlaylist('PLx', [v(A), v(B), v(C)]), false);
   assert.deepEqual(ids(m), [D]);
 });
@@ -285,7 +269,7 @@ test('adoptPlaying makes the playing video current when the queue is empty', () 
 
 test('extendPlaylist is dropped if the queue changed since the fetch started', () => {
   const m = model();
-  m.replaceWithPlaylist('PLx', [v(B), v(C)], B, 0);
+  m.replaceWithPlaylist('PLx', [v(B), v(C)], B, null);
   const snapshot = m.playlistSnapshot();
   m.add(v(E)); // user edits while the rest of the playlist loads
   assert.equal(m.extendPlaylist('PLx', [v(A), v(B), v(C), v(D)], snapshot), false);
@@ -294,17 +278,18 @@ test('extendPlaylist is dropped if the queue changed since the fetch started', (
 
 test('extendPlaylist keeps the playhead on the right copy of a repeated video', () => {
   const m = model();
-  m.replaceWithPlaylist('PLx', [v(B), v(C), v(B)], B, 0);
+  m.replaceWithPlaylist('PLx', [v(B), v(C), v(B)], B, null);
   m.jump(m.state().items[2].uid); // the second B
   const snapshot = m.playlistSnapshot();
   assert.equal(m.extendPlaylist('PLx', [v(B), v(C), v(B), v(D)], snapshot), true);
   assert.equal(m.state().current, 2);
 });
 
-test('next behaves like the current video ending', () => {
+test('next keeps an unfinished video behind the other pending tracks', () => {
   const m = model(); m.add(v(A)); m.add(v(B)); m.jump(m.state().items[0].uid);
   assert.deepEqual(m.next(A), { navigate: { videoId: B, timeSec: 0 } });
-  assert.equal(m.state().current, 1);
+  assert.deepEqual(ids(m), [B, A]);
+  assert.equal(currentId(m), B);
 });
 
 test('next at the end of the queue does nothing', () => {
@@ -369,7 +354,7 @@ test('after clear, the video that was playing ending does nothing', () => {
   const m = model();
   m.add(v(B), { videoId: A, timeSec: 0 });
   m.clear();
-  assert.equal(m.ended(A, v(C)), null);
+  assert.equal(m.ended(A), null);
   assert.deepEqual(ids(m), []);
 });
 
@@ -380,4 +365,84 @@ test('a new queue starts normally after clear', () => {
   m.add(v(D), { videoId: C, timeSec: 0 });
   assert.deepEqual(ids(m), [C, D]);
   assert.equal(currentId(m), C);
+});
+test('moving the playing item to the bottom keeps the edited pending order', () => {
+  const m = model();
+  m.add(v(B), { videoId: A, timeSec: 0 });
+  m.add(v(C));
+  m.move(m.state().items[2].uid, 0);
+  m.move(m.state().items[1].uid, 2);
+  assert.deepEqual(ids(m), [C, B, A]);
+  assert.equal(m.nextVideoId(), C);
+  assert.deepEqual(m.ended(A), { navigate: { videoId: C, timeSec: 0 } });
+  assert.deepEqual(ids(m), [C, B]);
+  assert.deepEqual(m.next(C), { navigate: { videoId: B, timeSec: 0 } });
+});
+
+test('adding the currently playing video to an empty queue adds it once', () => {
+  const m = model();
+  m.add(v(A), { videoId: A, timeSec: 23 });
+  assert.deepEqual(ids(m), [A]);
+  assert.equal(currentId(m), A);
+});
+
+test('Next starts a pending queue built from Home', () => {
+  const m = model();
+  m.add(v(B));
+  m.add(v(C));
+  assert.equal(m.nextVideoId(), B);
+  assert.deepEqual(m.next(A), { navigate: { videoId: B, timeSec: 0 } });
+});
+
+test('opening a mix from the same video restores the previous lineup and exact position', () => {
+  const m = model();
+  m.add(v(A), { videoId: A, timeSec: 37 });
+  m.add(v(B));
+  m.add(v(C));
+  const original = m.state().items;
+  m.navigated(A, { videoId: A, timeSec: 37 });
+  m.replaceWithPlaylist('RD' + A, [v(A), v(D), v(E)], A, { videoId: A, timeSec: 37 });
+  assert.deepEqual(ids(m), [A, D, E]);
+  assert.deepEqual(m.back(), { navigate: { videoId: A, timeSec: 37 } });
+  assert.deepEqual(m.state().items, original);
+  assert.equal(m.nextVideoId(), B);
+});
+
+test('returning from nested recommendations keeps new queue picks and resumes the original video', () => {
+  const m = model();
+  m.add(v(A), { videoId: A, timeSec: 0 });
+  m.add(v(B));
+  m.navigated(D, { videoId: A, timeSec: 72 });
+  m.navigated(E, { videoId: D, timeSec: 16 });
+  m.add(v(C));
+  assert.deepEqual(m.back(), { navigate: { videoId: D, timeSec: 16 } });
+  assert.deepEqual(m.back(), { navigate: { videoId: A, timeSec: 72 } });
+  assert.deepEqual(ids(m), [A, B, C]);
+  assert.equal(m.nextVideoId(), B);
+});
+
+test('Previous keeps a sampled video for replay and drops one with five minutes of playback', () => {
+  const m = model();
+  m.add(v(A));
+  m.add(v(B));
+  m.add(v(C));
+  const uid = m.state().items[1].uid;
+  m.jump(uid);
+  m.creditPlayback(uid, 120);
+  m.previous(B);
+  assert.deepEqual(m.ended(A), { navigate: { videoId: B, timeSec: 0 } });
+  m.creditPlayback(uid, 180);
+  assert.deepEqual(m.next(B), { navigate: { videoId: C, timeSec: 0 } });
+  assert.deepEqual(ids(m), [C]);
+});
+
+test('a Mix opened in a nested detour restores the timestamp of the original video', () => {
+  const m = model();
+  m.add(v(B), { videoId: A, timeSec: 0 });
+  m.navigated(C, { videoId: A, timeSec: 82 });
+  m.navigated(D, { videoId: C, timeSec: 13 });
+  m.replaceWithPlaylist('RD' + D, [v(D), v(E)], D, { videoId: D, timeSec: 4 });
+  assert.deepEqual(m.back(), { navigate: { videoId: A, timeSec: 82 } });
+  assert.deepEqual(ids(m), [A, B]);
+  assert.deepEqual(m.state().returnStack, []);
 });

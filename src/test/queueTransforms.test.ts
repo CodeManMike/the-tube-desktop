@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { capturePlaylistAndAutoplay, interceptAddToQueue, pointAutoplayAtQueue } from '../plugins/queue/transforms';
+import { capturePlaylistAndAutoplay, interceptAddToQueue } from '../plugins/queue/transforms';
 
 const g = globalThis as any;
 const ID = (c: string) => c.repeat(11);
@@ -56,24 +56,6 @@ test('rewrites both hover-button and menu-sheet QUEUE commands; leaves other sig
   );
 });
 
-test('pointAutoplayAtQueue overwrites autoplay, next button and overlay ids when a next video is set', () => {
-  g.__ttdQueue = { nextVideoId: ID('n') };
-  const out = pointAutoplayAtQueue(watchResponse(), {});
-  const set = out.contents.twoColumnWatchNextResults.autoplay.autoplay.sets[0];
-  assert.equal(set.autoplayVideo.watchEndpoint.videoId, ID('n'));
-  assert.equal(set.nextButtonVideo.watchEndpoint.videoId, ID('n'));
-  assert.equal(out.playerOverlays.playerOverlayRenderer.autoplay.playerOverlayAutoplayRenderer.videoId, ID('n'));
-  delete g.__ttdQueue;
-});
-
-test('pointAutoplayAtQueue is a no-op without queue state', () => {
-  delete g.__ttdQueue;
-  assert.deepEqual(pointAutoplayAtQueue(watchResponse(), {}), watchResponse());
-  g.__ttdQueue = { nextVideoId: null };
-  assert.deepEqual(pointAutoplayAtQueue(watchResponse(), {}), watchResponse());
-  delete g.__ttdQueue;
-});
-
 test('capture extracts playlist items and the autoplay candidate', () => {
   delete g.__ttdLastWatchData;
   const data = watchResponse();
@@ -102,7 +84,6 @@ test('every transform returns non-watch data unchanged', () => {
   g.__ttdLastWatchData = 'untouched';
   const feed = { contents: { richGridRenderer: { contents: [{ x: 1 }] } } };
   assert.deepEqual(interceptAddToQueue(structuredClone(feed), {}), feed);
-  assert.deepEqual(pointAutoplayAtQueue(structuredClone(feed), {}), feed);
   assert.deepEqual(capturePlaylistAndAutoplay(structuredClone(feed), {}), feed);
   assert.equal(g.__ttdLastWatchData, 'untouched');
   delete g.__ttdQueue;
@@ -113,7 +94,7 @@ import vm from 'vm';
 import { asExpression } from '../main/pluginRegistry';
 
 test('each transform runs standalone in a fresh context (self-contained)', () => {
-  for (const fn of [interceptAddToQueue, pointAutoplayAtQueue, capturePlaylistAndAutoplay]) {
+  for (const fn of [interceptAddToQueue, capturePlaylistAndAutoplay]) {
     const sandbox: any = {};
     sandbox.globalThis = sandbox;
     const standalone = vm.runInNewContext(asExpression(fn), sandbox);
@@ -130,21 +111,18 @@ test('the queue page script serialises and exits quietly without the bridge', ()
   assert.doesNotThrow(() => standalone({}));
 });
 
-test('pointAutoplayAtQueue never points a video at itself (stale queue state)', () => {
-  g.__ttdQueue = { nextVideoId: ID('w') };
-  assert.deepEqual(pointAutoplayAtQueue(watchResponse(ID('w')), {}), watchResponse(ID('w')));
-  delete g.__ttdQueue;
-});
-
 test('captured watch data is tagged with its own video id', () => {
   capturePlaylistAndAutoplay(watchResponse(ID('w')), {});
   assert.equal(g.__ttdLastWatchData.videoId, ID('w'));
 });
 
-test("the queue plugin captures YouTube's real pick before redirecting autoplay", async () => {
+test("the queue plugin preserves YouTube's native autoplay targets", async () => {
   const { queue } = await import('../plugins/queue');
   const fns = queue.transforms!.next as Function[];
-  assert.ok(fns.indexOf(capturePlaylistAndAutoplay) < fns.indexOf(pointAutoplayAtQueue));
+  const data = watchResponse(ID('w'));
+  const expected = structuredClone(data);
+  for (const fn of fns) fn(data, {});
+  assert.deepEqual(data, expected);
 });
 
 test('capture registers itself so the page script can run it on in-app navigations', () => {

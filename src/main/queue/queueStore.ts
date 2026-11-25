@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { writeFileAtomic } from '../atomicFile';
-import { MAX_RETURN_POINTS, QueueItem, QueueState, ReturnPoint, ShuffleSource } from './model';
+import { MAX_DETOUR_DEPTH, MAX_RETURN_POINTS, QUEUE_WATCHED_SECONDS, QueueItem, QueueState, ReturnPoint, ShuffleSource } from './model';
 import { isYouTubeImage } from './validate';
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -42,6 +42,9 @@ function item(v: unknown): QueueItem | null {
     channel: typeof v.channel === 'string' ? v.channel : '',
     thumbnail: isYouTubeImage(v.thumbnail) ? v.thumbnail : `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg`,
     ...(finite(v.durationSec) && { durationSec: v.durationSec }),
+    ...(v.played === true && { played: true }),
+    ...(finite(v.watchedSec) && v.watchedSec > 0 && { watchedSec: Math.min(QUEUE_WATCHED_SECONDS, v.watchedSec) }),
+    ...((v.source === 'shuffle' || v.source === 'autoplay') && { source: v.source }),
   };
 }
 
@@ -63,7 +66,8 @@ function returnPoint(v: unknown): ReturnPoint | null {
       current: current(v.current, list),
       sourceListId: listId(v.sourceListId),
       shuffle: shuffleSource(v.shuffle),
-      resumeTimeSec: v.resumeTimeSec,
+      resumeTimeSec: Math.max(0, v.resumeTimeSec),
+      ...(isVideoId(v.resumeVideoId) && { resumeVideoId: v.resumeVideoId }),
     };
   }
   return null;
@@ -74,10 +78,14 @@ function sanitise(raw: unknown): QueueState {
   if (!isObject(raw)) throw new Error('not an object');
   const list = items(raw.items);
   const stack = Array.isArray(raw.returnStack) ? raw.returnStack.map(returnPoint).filter((p): p is ReturnPoint => p !== null) : [];
+  const queuePoints = stack.filter((point) => point.kind === 'queue').slice(-MAX_RETURN_POINTS);
+  const detours = stack.filter((point) => point.kind === 'video');
+  // A queue from an older build may have more detours. Keep the origin and latest stop.
+  const retained = new Set([...queuePoints, ...detours.slice(0, 1), ...detours.slice(1).slice(-(MAX_DETOUR_DEPTH - 1))]);
   return {
     items: list,
     current: current(raw.current, list),
-    returnStack: stack.slice(-MAX_RETURN_POINTS),
+    returnStack: stack.filter((point) => retained.has(point)),
     detourVideoId: isVideoId(raw.detourVideoId) ? raw.detourVideoId : null,
     sourceListId: listId(raw.sourceListId),
     shuffle: shuffleSource(raw.shuffle),

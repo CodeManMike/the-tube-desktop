@@ -6,7 +6,9 @@
   !include nsDialogs.nsh
   !include LogicLib.nsh
 
-  Var ttdFresh        ; 1 when there are no settings yet (a first install)
+  Var ttdFresh        ; 1 when there are no settings yet
+  Var ttdKeepSettings
+  Var ttdBoxKeepSettings
   Var ttdDesktop
   Var ttdStartup
   Var ttdTray
@@ -21,6 +23,7 @@
   Var ttdBoxDislikes
 
   !macro customInit
+    StrCpy $ttdKeepSettings ${BST_CHECKED}
     StrCpy $ttdDesktop ${BST_CHECKED}
     StrCpy $ttdStartup ${BST_UNCHECKED}
     StrCpy $ttdTray ${BST_UNCHECKED}
@@ -43,8 +46,9 @@
     Page custom ttdOptionsShow ttdOptionsLeave
 
     Function ttdOptionsShow
-      # Updates keep the shortcut and settings the user already has.
+      # A normal update still offers the settings decision if a profile exists.
       ${If} ${isUpdated}
+      ${AndIf} $ttdFresh == 1
         Abort
       ${EndIf}
       !insertmacro MUI_HEADER_TEXT "Choose your settings" "You can change all of these later in Settings (Ctrl+,)."
@@ -54,9 +58,11 @@
         Abort
       ${EndIf}
 
-      ${NSD_CreateCheckbox} 0 0 100% 12u "Create a desktop shortcut"
-      Pop $ttdBoxDesktop
-      ${NSD_SetState} $ttdBoxDesktop $ttdDesktop
+      ${IfNot} ${isUpdated}
+        ${NSD_CreateCheckbox} 0 0 100% 12u "Create a desktop shortcut"
+        Pop $ttdBoxDesktop
+        ${NSD_SetState} $ttdBoxDesktop $ttdDesktop
+      ${EndIf}
 
       ${If} $ttdFresh == 1
         ${NSD_CreateCheckbox} 0 20u 100% 12u "Start The Tube Desktop when I sign in to Windows"
@@ -75,7 +81,10 @@
         Pop $ttdBoxDislikes
         ${NSD_SetState} $ttdBoxDislikes $ttdDislikes
       ${Else}
-        ${NSD_CreateLabel} 0 24u 100% 24u "Your existing settings will be kept."
+        ${NSD_CreateCheckbox} 0 24u 100% 12u "Keep my existing app settings (recommended)"
+        Pop $ttdBoxKeepSettings
+        ${NSD_SetState} $ttdBoxKeepSettings $ttdKeepSettings
+        ${NSD_CreateLabel} 0 42u 100% 26u "Uncheck to reset app preferences to their defaults. Your queue, watch history, and YouTube sign-in are kept."
         Pop $0
       ${EndIf}
 
@@ -83,13 +92,17 @@
     FunctionEnd
 
     Function ttdOptionsLeave
-      ${NSD_GetState} $ttdBoxDesktop $ttdDesktop
+      ${IfNot} ${isUpdated}
+        ${NSD_GetState} $ttdBoxDesktop $ttdDesktop
+      ${EndIf}
       ${If} $ttdFresh == 1
         ${NSD_GetState} $ttdBoxStartup $ttdStartup
         ${NSD_GetState} $ttdBoxTray $ttdTray
         ${NSD_GetState} $ttdBoxHideWatched $ttdHideWatched
         ${NSD_GetState} $ttdBoxSponsor $ttdSponsor
         ${NSD_GetState} $ttdBoxDislikes $ttdDislikes
+      ${Else}
+        ${NSD_GetState} $ttdBoxKeepSettings $ttdKeepSettings
       ${EndIf}
     FunctionEnd
   !macroend
@@ -112,6 +125,15 @@
         System::Call 'Shell32::SHChangeNotify(i 0x8000000, i 0, i 0, i 0)'
       ${EndIf}
 
+    ${EndIf}
+
+    ${If} $ttdKeepSettings == ${BST_UNCHECKED}
+      SetShellVarContext current
+      !insertmacro ttdRemovePreferences
+      ${If} $installMode == "all"
+        SetShellVarContext all
+      ${EndIf}
+    ${ElseIfNot} ${isUpdated}
       # The app reads this once on its first start, applies it and deletes it
       # (src/main/installOptions.ts).
       ${If} $ttdFresh == 1
@@ -136,9 +158,37 @@
   !macroend
 !endif
 
+# Reset only the current user's app preferences. The queue, history and Electron
+# partition are separate data and survive both settings choices.
+!macro ttdRemovePreferences
+  ClearErrors
+  ${If} ${FileExists} "$APPDATA\${PRODUCT_NAME}\install-options.json"
+    Delete "$APPDATA\${PRODUCT_NAME}\install-options.json"
+  ${EndIf}
+  ${If} ${FileExists} "$APPDATA\${PRODUCT_NAME}\settings.json"
+    Delete "$APPDATA\${PRODUCT_NAME}\settings.json"
+  ${EndIf}
+  ${If} ${Errors}
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Some app preferences could not be removed." /SD IDOK
+  ${EndIf}
+!macroend
+
 # The desktop shortcut is ours (createDesktopShortcut is off), so remove it ourselves,
 # except during an update, which keeps it.
 !macro customUnInstall
+  ${IfNot} ${isUpdated}
+  ${AndIfNot} ${Silent}
+    SetShellVarContext current
+    ${If} ${FileExists} "$APPDATA\${PRODUCT_NAME}\settings.json"
+    ${OrIf} ${FileExists} "$APPDATA\${PRODUCT_NAME}\install-options.json"
+      MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "Remove your app preferences?$\r$\n$\r$\nNo keeps them for the next install. Your queue, watch history and YouTube sign-in are kept either way." /SD IDNO IDNO ttdKeepOnUninstall
+      !insertmacro ttdRemovePreferences
+    ${EndIf}
+    ttdKeepOnUninstall:
+    ${If} $installMode == "all"
+      SetShellVarContext all
+    ${EndIf}
+  ${EndIf}
   ${ifNot} ${isKeepShortcuts}
     WinShell::UninstShortcut "$oldDesktopLink"
     Delete "$oldDesktopLink"
